@@ -74,6 +74,16 @@ app.add_middleware(
 
 # ─── Health Check ────────────────────────────────────────────────────────────────
 
+@app.get("/", tags=["System"])
+async def root():
+    """Root endpoint — returns a welcome message and API status."""
+    return {
+        "message": f"Welcome to {settings.APP_NAME} API",
+        "version": "1.0.0",
+        "status": "healthy"
+    }
+
+
 @app.get("/health", tags=["System"])
 async def health_check():
     """Health check endpoint — returns OK if the API is running."""
