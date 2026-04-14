@@ -164,10 +164,10 @@ async def _send_smtp_email(to_email: str, subject: str, html_content: str) -> bo
         part = MIMEText(html_content, "html")
         msg.attach(part)
         
-        # Send via Mailtrap SMTP
-        with smtplib.SMTP(settings.MAILTRAP_HOST, settings.MAILTRAP_PORT) as server:
+        # Send via generic SMTP
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
             server.starttls()
-            server.login(settings.MAILTRAP_USERNAME, settings.MAILTRAP_PASSWORD)
+            server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
             server.sendmail(settings.EMAIL_FROM, to_email, msg.as_string())
         
         logger.info(f"✅ Email sent to {to_email} (Subject: {subject})")

@@ -19,16 +19,16 @@ services:
         value: llama-3.2-11b-vision-preview
       - key: GROQ_TEXT_MODEL
         value: llama-3.1-8b-instant
-      - key: MAILTRAP_HOST
+      - key: SMTP_HOST
         sync: false
-      - key: MAILTRAP_PORT
+      - key: SMTP_PORT
         sync: false
-      - key: MAILTRAP_USERNAME
+      - key: SMTP_USERNAME
         sync: false
-      - key: MAILTRAP_PASSWORD
+      - key: SMTP_PASSWORD
         sync: false
       - key: EMAIL_FROM
-        value: "noreply@nexloan.com"
+        value: "mayurdoiphode55@gmail.com"
       - key: R2_ACCOUNT_ID
         sync: false
       - key: R2_ACCESS_KEY_ID

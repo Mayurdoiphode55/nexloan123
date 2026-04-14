@@ -33,12 +33,12 @@ class Settings(BaseSettings):
     R2_BUCKET_NAME: str = "nexloan-kyc-docs"
     R2_PUBLIC_URL: str = ""
 
-    # Email — Mailtrap SMTP
-    MAILTRAP_HOST: str = "sandbox.smtp.mailtrap.io"
-    MAILTRAP_PORT: int = 2525
-    MAILTRAP_USERNAME: str = ""
-    MAILTRAP_PASSWORD: str = ""
-    EMAIL_FROM: str = "noreply@yourdomain.com"
+    # Email — Generic SMTP (Default Gmail)
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    EMAIL_FROM: str = "mayurdoiphode55@gmail.com"
     
     # Resend (email) — Legacy, use Mailtrap instead
     RESEND_API_KEY: str = ""
