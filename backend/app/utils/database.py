@@ -15,13 +15,17 @@ from app.config import settings
 from app.models.loan import Base
 
 
-# Create async engine — pool settings tuned for free-tier databases
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
     pool_size=5,
     max_overflow=10,
     pool_pre_ping=True,
+    connect_args={
+        "server_settings": {"search_path": "public"},
+        "prepared_statement_cache_size": 0,
+        "statement_cache_size": 0
+    }
 )
 
 # Session factory — expires_on_commit=False for async compatibility
