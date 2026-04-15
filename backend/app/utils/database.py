@@ -22,9 +22,7 @@ engine = create_async_engine(
     max_overflow=10,
     pool_pre_ping=True,
     connect_args={
-        "server_settings": {"search_path": "public"},
         "prepared_statement_cache_size": 0,
-        "statement_cache_size": 0
     }
 )
 
