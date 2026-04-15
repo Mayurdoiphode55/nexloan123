@@ -5,7 +5,7 @@ Endpoints: /register, /send-otp, /verify-otp
 
 import logging
 
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, BackgroundTasks
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -67,7 +67,11 @@ class VerifyOTPResponse(BaseModel):
     tags=["Auth"],
     summary="Register a new user",
 )
-async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register(
+    req: RegisterRequest, 
+    background_tasks: BackgroundTasks, 
+    db: AsyncSession = Depends(get_db)
+):
     """
     Register a new user with full name, email, and mobile.
     Generates a 6-digit OTP, stores it in Redis with 5-min TTL,
@@ -113,10 +117,8 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     print(f"🔑 DEV: YOUR OTP FOR {req.email} IS: {otp}")
     print("="*60 + "\n")
 
-    # Send OTP via email
-    email_sent = await send_otp_email(req.email, otp, req.full_name)
-    if not email_sent:
-        logger.warning(f"⚠️  Failed to send OTP email to {req.email}, but OTP is stored in Redis")
+    # Send OTP via email in background
+    background_tasks.add_task(send_otp_email, req.email, otp, req.full_name)
 
     return RegisterResponse(
         user_id=str(user.id),
@@ -131,7 +133,11 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     tags=["Auth"],
     summary="Send OTP to an existing user",
 )
-async def send_otp_endpoint(req: SendOTPRequest, db: AsyncSession = Depends(get_db)):
+async def send_otp_endpoint(
+    req: SendOTPRequest, 
+    background_tasks: BackgroundTasks, 
+    db: AsyncSession = Depends(get_db)
+):
     """
     Send (or resend) an OTP to an existing user.
     Identifier can be an email or 10-digit mobile number.
@@ -158,14 +164,8 @@ async def send_otp_endpoint(req: SendOTPRequest, db: AsyncSession = Depends(get_
     print(f"🔑 DEV: YOUR OTP FOR {user.email} IS: {otp}")
     print("="*60 + "\n")
 
-    # Send OTP via email
-    email_sent = await send_otp_email(user.email, otp, user.full_name)
-    if not email_sent:
-        logger.warning(f"⚠️  Failed to send OTP email to {user.email}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to send OTP email. Please try again.",
-        )
+    # Send OTP via email in background
+    background_tasks.add_task(send_otp_email, user.email, otp, user.full_name)
 
     return {
         "message": f"✅ OTP sent to {user.email}",

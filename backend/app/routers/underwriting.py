@@ -4,7 +4,7 @@ Endpoints for automated decision engine.
 """
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +35,7 @@ class UnderwritingResponse(BaseModel):
 )
 async def trigger_evaluation(
     loan_id: str,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -44,7 +45,7 @@ async def trigger_evaluation(
     but for this prototype, we trigger it via an API call.
     """
     try:
-        result = await evaluate_loan(db, loan_id, str(current_user.id))
+        result = await evaluate_loan(db, loan_id, str(current_user.id), background_tasks)
         return result
     except ValueError as e:
         logger.warning(f"Validation error during underwriting: {e}")

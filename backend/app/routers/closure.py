@@ -5,7 +5,7 @@ Handles pre-closure quotes and final loan closure.
 
 import logging
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy import select, asc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -72,6 +72,7 @@ class CloseLoanResponse(BaseModel):
 )
 async def close_loan(
     loan_id: str,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -120,8 +121,9 @@ async def close_loan(
     loan.closed_at = datetime.utcnow()
     
     try:
-        # Send Email
-        await send_no_dues_certificate(
+        # Send No-Dues Certificate email in background
+        background_tasks.add_task(
+            send_no_dues_certificate,
             email=current_user.email,
             full_name=current_user.full_name,
             loan_number=loan.loan_number,

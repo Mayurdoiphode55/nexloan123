@@ -7,6 +7,7 @@ import random
 from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import BackgroundTasks
 
 from app.models.loan import Loan, LoanStatus, AuditLog, User
 from app.services.email_service import send_approval_email, send_rejection_email
@@ -62,7 +63,7 @@ def determine_interest_rate(credit_score: int, dti: float) -> float:
     return round(min(max(base_rate, 10.0), 24.0), 2)
 
 
-async def evaluate_loan(db: AsyncSession, loan_id: str, admin_user_id: str) -> dict:
+async def evaluate_loan(db: AsyncSession, loan_id: str, admin_user_id: str, background_tasks: BackgroundTasks) -> dict:
     """
     Core underwriting evaluation function.
     Reads loan data, computes metrics, and decides outcome.
@@ -128,7 +129,9 @@ async def evaluate_loan(db: AsyncSession, loan_id: str, admin_user_id: str) -> d
         
         logger.info(f"❌ Loan {loan.loan_number} REJECTED: {loan.rejection_reason}")
         
-        await send_rejection_email(
+        # Send rejection email in background
+        background_tasks.add_task(
+            send_rejection_email,
             email=user.email,
             full_name=user.full_name,
             loan_number=loan.loan_number,
@@ -151,7 +154,9 @@ async def evaluate_loan(db: AsyncSession, loan_id: str, admin_user_id: str) -> d
         
         logger.info(f"✅ Loan {loan.loan_number} APPROVED at {final_rate}% (EMI: ₹{loan.emi_amount})")
         
-        await send_approval_email(
+        # Send approval email in background
+        background_tasks.add_task(
+            send_approval_email,
             email=user.email,
             full_name=user.full_name,
             loan_number=loan.loan_number,

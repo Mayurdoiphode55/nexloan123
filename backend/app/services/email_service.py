@@ -4,7 +4,7 @@ Uses Mailtrap SMTP to send branded HTML emails.
 """
 
 import logging
-import smtplib
+import aiosmtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -164,13 +164,18 @@ async def _send_smtp_email(to_email: str, subject: str, html_content: str) -> bo
         part = MIMEText(html_content, "html")
         msg.attach(part)
         
-        # Send via generic SMTP
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-            server.starttls()
-            server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
-            server.sendmail(settings.EMAIL_FROM, to_email, msg.as_string())
+        # Send via aiosmtplib (async)
+        await aiosmtplib.send(
+            msg,
+            hostname=settings.SMTP_HOST,
+            port=settings.SMTP_PORT,
+            username=settings.SMTP_USERNAME,
+            password=settings.SMTP_PASSWORD,
+            use_tls=False,  # Usually False when using STARTTLS
+            start_tls=True,
+        )
         
-        logger.info(f"✅ Email sent to {to_email} (Subject: {subject})")
+        logger.info(f"✅ Async Email sent to {to_email} (Subject: {subject})")
         return True
         
     except Exception as e:

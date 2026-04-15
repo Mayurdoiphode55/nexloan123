@@ -6,7 +6,7 @@ Handles conversational AI and in-chat OTP login flow.
 import logging
 import uuid
 import json
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -92,6 +92,7 @@ async def _fetch_loan_context_for_bot(user_id: str, db: AsyncSession) -> dict:
 )
 async def send_message(
     req: MessageRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -130,7 +131,8 @@ async def send_message(
         otp = generate_otp()
         # Store OTP against their mobile (consistent with auth system)
         await store_otp(user.mobile, otp)
-        await send_otp_email(user.email, otp, user.full_name)
+        # Send OTP via email in background
+        background_tasks.add_task(send_otp_email, user.email, otp, user.full_name)
         
         # Advance state
         session["awaiting_mobile"] = False
