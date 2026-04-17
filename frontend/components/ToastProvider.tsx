@@ -1,102 +1,121 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, { useEffect, useState } from "react";
 
-type ToastType = "success" | "error" | "info";
+type ToastVariant = "success" | "error" | "info";
 
-interface Toast {
-  id: number;
+interface ToastData {
+  id: string;
   message: string;
-  type: ToastType;
+  variant: ToastVariant;
+  dismissing?: boolean;
 }
 
-interface ToastContextType {
-  addToast: (message: string, type?: ToastType) => void;
+interface ToastContextValue {
+  showToast: (message: string, variant?: ToastVariant) => void;
 }
 
-const ToastContext = createContext<ToastContextType | undefined>(undefined);
+const ToastContext = React.createContext<ToastContextValue>({
+  showToast: () => {},
+});
 
 export function useToast() {
-  const ctx = useContext(ToastContext);
-  if (!ctx) throw new Error("useToast must be used within ToastProvider");
-  return ctx;
+  return React.useContext(ToastContext);
 }
 
-let toastId = 0;
+const BORDER_COLORS: Record<ToastVariant, string> = {
+  success: "var(--color-success)",
+  error: "var(--color-error)",
+  info: "var(--accent-400)",
+};
 
-export default function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = useState<Toast[]>([]);
-
-  const addToast = useCallback((message: string, type: ToastType = "info") => {
-    const id = ++toastId;
-    setToasts((prev) => [...prev, { id, message, type }]);
-
-    // Auto-dismiss after 4 seconds
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
-  }, []);
-
-  const removeToast = useCallback((id: number) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
-
-  const getIcon = (type: ToastType) => {
-    switch (type) {
-      case "success":
-        return (
-          <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
-          </svg>
-        );
-      case "error":
-        return (
-          <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        );
-      case "info":
-        return (
-          <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        );
-    }
-  };
-
-  const getBorderColor = (type: ToastType) => {
-    switch (type) {
-      case "success": return "border-l-green-500";
-      case "error": return "border-l-red-500";
-      case "info": return "border-l-blue-500";
-    }
-  };
+function ToastItem({ toast, onDismiss }: { toast: ToastData; onDismiss: (id: string) => void }) {
+  useEffect(() => {
+    const timer = setTimeout(() => onDismiss(toast.id), 3000);
+    return () => clearTimeout(timer);
+  }, [toast.id, onDismiss]);
 
   return (
-    <ToastContext.Provider value={{ addToast }}>
+    <div
+      className={`nexloan-toast ${toast.dismissing ? "nexloan-toast--dismiss" : ""}`}
+      style={{ borderLeftColor: BORDER_COLORS[toast.variant] }}
+    >
+      <p>{toast.message}</p>
+
+      <style jsx>{`
+        .nexloan-toast {
+          background: var(--surface-overlay);
+          border-radius: var(--radius-lg);
+          border-left: 4px solid;
+          padding: var(--space-4) var(--space-5);
+          max-width: 380px;
+          width: 100%;
+          color: var(--text-primary);
+          font-family: var(--font-body);
+          font-size: var(--text-sm);
+          box-shadow: var(--shadow-lg);
+          animation: slideUp 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+        .nexloan-toast--dismiss {
+          animation: slideDown 200ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+        .nexloan-toast p {
+          margin: 0;
+          line-height: 1.5;
+        }
+
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(24px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slideDown {
+          from { opacity: 1; transform: translateY(0); }
+          to   { opacity: 0; transform: translateY(16px); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+export default function ToastProvider({ children }: { children: React.ReactNode }) {
+  const [toasts, setToasts] = useState<ToastData[]>([]);
+
+  const showToast = React.useCallback((message: string, variant: ToastVariant = "info") => {
+    const id = Math.random().toString(36).slice(2, 9);
+    setToasts((prev) => [...prev, { id, message, variant }]);
+  }, []);
+
+  const dismissToast = React.useCallback((id: string) => {
+    setToasts((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, dismissing: true } : t))
+    );
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 200);
+  }, []);
+
+  return (
+    <ToastContext.Provider value={{ showToast }}>
       {children}
 
-      {/* Toast Container */}
-      <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-3 pointer-events-none" style={{ maxWidth: "420px" }}>
+      {/* Toast container */}
+      <div
+        style={{
+          position: "fixed",
+          bottom: "24px",
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 9999,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: "var(--space-2)",
+          pointerEvents: "none",
+        }}
+      >
         {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`pointer-events-auto flex items-start gap-3 bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 border-l-4 ${getBorderColor(toast.type)} rounded-xl shadow-2xl px-4 py-3.5 animate-in slide-in-from-right-5 fade-in duration-300 transition-all`}
-          >
-            <div className="flex-shrink-0 mt-0.5">
-              {getIcon(toast.type)}
-            </div>
-            <p className="text-sm font-medium text-gray-800 dark:text-gray-200 flex-1 leading-relaxed">
-              {toast.message}
-            </p>
-            <button
-              onClick={() => removeToast(toast.id)}
-              className="flex-shrink-0 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+          <div key={toast.id} style={{ pointerEvents: "auto" }}>
+            <ToastItem toast={toast} onDismiss={dismissToast} />
           </div>
         ))}
       </div>

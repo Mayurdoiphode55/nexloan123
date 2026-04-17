@@ -9,11 +9,37 @@ export default function AppLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex bg-gray-50 dark:bg-slate-900 min-h-screen">
+    <div className="app-layout">
       <Sidebar />
-      <div className="flex-1 overflow-x-hidden flex flex-col h-screen overflow-y-auto">
-        <main className="flex-1">{children}</main>
+      <div className="app-layout__content">
+        <main className="app-layout__main">{children}</main>
       </div>
+
+      <style jsx>{`
+        .app-layout {
+          display: flex;
+          min-height: 100vh;
+          background: var(--surface-base);
+        }
+        .app-layout__content {
+          flex: 1;
+          overflow-x: hidden;
+          display: flex;
+          flex-direction: column;
+          height: 100vh;
+          overflow-y: auto;
+        }
+        .app-layout__main {
+          flex: 1;
+          padding: var(--space-8);
+        }
+        @media (max-width: 640px) {
+          .app-layout__main {
+            padding: var(--space-4);
+            padding-bottom: 100px; /* Safe space for bottom nav + browser bars */
+          }
+        }
+      `}</style>
     </div>
   );
 }

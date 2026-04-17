@@ -1,47 +1,125 @@
 @import "tailwindcss";
+@import "../styles/tokens.css";
+@import "../styles/animations.css";
 
-@custom-variant dark (&:where(.dark, .dark *));
+/* ============================================================
+   NEXLOAN GLOBAL STYLES
+   Base resets, body styles, custom scrollbar
+   ============================================================ */
 
-:root {
-  --background: #ffffff;
-  --foreground: #0f172a;
-  --card: #ffffff;
-  --card-foreground: #0f172a;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --border: #e2e8f0;
+/* ── Base Reset ──────────────────────────────────────────── */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-.dark {
-  --background: #0f172a;
-  --foreground: #f8fafc;
-  --card: #1e293b;
-  --card-foreground: #f8fafc;
-  --muted: #334155;
-  --muted-foreground: #94a3b8;
-  --border: #334155;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-border: var(--border);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+html {
+  height: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-  transition: background-color 0.3s ease, color 0.3s ease;
+  min-height: 100%;
+  background-color: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.6;
+  transition: background-color 300ms ease, color 300ms ease;
 }
 
-.dark body {
-  background-color: var(--background);
-  color: var(--foreground);
+/* ── Custom Scrollbar ────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface-overlay);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--neutral-600);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--neutral-500);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--neutral-600) var(--surface-overlay);
+}
+
+/* ── Selection ───────────────────────────────────────────── */
+::selection {
+  background: var(--accent-500);
+  color: var(--neutral-0);
+}
+
+/* ── Focus Ring ──────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--accent-400);
+  outline-offset: 2px;
+}
+
+/* ── Links ───────────────────────────────────────────────── */
+a {
+  color: var(--text-accent);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: var(--accent-300);
+}
+
+/* ── Utility Classes ─────────────────────────────────────── */
+
+/* Label style: uppercase caps with letter-spacing */
+.label-caps {
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+/* Display number style */
+.display-number {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* Mono number style */
+.mono-number {
+  font-family: var(--font-mono);
+}
+
+/* Card entrance animation */
+.animate-card-entrance {
+  animation: cardEntrance 300ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+/* Stagger children — set --stagger-index via inline style */
+.animate-stagger {
+  opacity: 0;
+  animation: staggerIn 400ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation-delay: calc(var(--stagger-index, 0) * 50ms);
+}
+
+/* Scale in for badges */
+.animate-scale-in {
+  animation: scaleIn 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Message entrance */
+.animate-message-in {
+  animation: messageIn 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }

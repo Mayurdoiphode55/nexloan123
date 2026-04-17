@@ -4,111 +4,153 @@ import React, { useEffect, useState } from "react";
 
 interface CreditScoreGaugeProps {
   score: number;
+  maxScore?: number;
+  minScore?: number;
 }
 
-export default function CreditScoreGauge({ score }: CreditScoreGaugeProps) {
-  const [animatedScore, setAnimatedScore] = useState(300);
+export default function CreditScoreGauge({
+  score,
+  maxScore = 850,
+  minScore = 300,
+}: CreditScoreGaugeProps) {
+  const [animated, setAnimated] = useState(false);
 
   useEffect(() => {
-    // Simple count-up animation
-    const duration = 1500;
-    const steps = 60;
-    const stepDuration = duration / steps;
-    const scoreDiff = score - 300;
-    const stepValue = scoreDiff / steps;
+    const timer = setTimeout(() => setAnimated(true), 100);
+    return () => clearTimeout(timer);
+  }, []);
 
-    let currentStep = 0;
-    const timer = setInterval(() => {
-      currentStep++;
-      if (currentStep >= steps) {
-        setAnimatedScore(score);
-        clearInterval(timer);
-      } else {
-        setAnimatedScore(Math.floor(300 + stepValue * currentStep));
-      }
-    }, stepDuration);
-
-    return () => clearInterval(timer);
-  }, [score]);
-
-  // Math for SVG arc (half circle)
+  // Calculate arc
   const radius = 80;
-  const strokeWidth = 16;
-  const circumference = Math.PI * radius; // Half circle
+  const strokeWidth = 12;
+  const startAngle = 135;
+  const endAngle = 405;
+  const totalAngle = endAngle - startAngle;
+  const circumference = (totalAngle / 360) * 2 * Math.PI * radius;
+  const filledPercent = Math.min(Math.max((score - minScore) / (maxScore - minScore), 0), 1);
+  const filledOffset = circumference * (1 - filledPercent);
 
-  // Score mapping (300 to 850)
-  const minScore = 300;
-  const maxScore = 850;
-  
-  // Calculate percentage of the arc
-  const clampedScore = Math.min(Math.max(animatedScore, minScore), maxScore);
-  const percentage = (clampedScore - minScore) / (maxScore - minScore);
-  
-  // Calculate the strokeDashoffset to fill the arc partially
-  const strokeDashoffset = circumference - percentage * circumference;
+  // Color based on score band
+  const getColor = () => {
+    if (score < 600) return "var(--color-error)";
+    if (score < 650) return "var(--color-warning)";
+    if (score < 700) return "#EAB308";
+    if (score < 750) return "var(--color-success)";
+    return "var(--gold-400)";
+  };
 
-  let color = "#ef4444"; // Red (Poor)
-  let statusText = "Poor";
-  
-  if (clampedScore >= 750) {
-    color = "#22c55e"; // Green (Excellent)
-    statusText = "Excellent";
-  } else if (clampedScore >= 700) {
-    color = "#eab308"; // Yellow (Good)
-    statusText = "Good";
-  } else if (clampedScore >= 600) {
-    color = "#f97316"; // Orange (Fair)
-    statusText = "Fair";
-  }
+  const getBandLabel = () => {
+    if (score < 600) return "Poor";
+    if (score < 650) return "Fair";
+    if (score < 700) return "Good";
+    if (score < 750) return "Very Good";
+    return "Excellent";
+  };
+
+  const color = getColor();
+
+  // SVG arc path
+  const polarToCartesian = (cx: number, cy: number, r: number, angle: number) => {
+    const rad = ((angle - 90) * Math.PI) / 180;
+    return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+  };
+
+  const start = polarToCartesian(100, 100, radius, startAngle);
+  const end = polarToCartesian(100, 100, radius, endAngle);
+  const largeArc = totalAngle > 180 ? 1 : 0;
+  const arcPath = `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y}`;
 
   return (
-    <div className="flex flex-col items-center justify-center p-6 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700 transition-all duration-300">
-      <h3 className="text-sm font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-4">
-        Theoremlabs Credit Score
-      </h3>
+    <div className="credit-gauge">
+      <p className="credit-gauge__label">THEOREMLABS CREDIT SCORE</p>
 
-      <div className="relative w-48 h-28 flex items-end justify-center overflow-hidden">
-        {/* Background Arc */}
-        <svg
-          viewBox="0 0 200 100"
-          className="w-full absolute top-0"
-          style={{ transform: "rotate(0deg)" }}
-        >
+      <div className="credit-gauge__svg-wrap">
+        <svg viewBox="0 0 200 200" width="200" height="200">
+          {/* Track */}
           <path
-            d="M 20 90 A 80 80 0 0 1 180 90"
+            d={arcPath}
             fill="none"
-            stroke="currentColor"
-            className="text-gray-100 dark:text-slate-700"
+            stroke="var(--surface-sunken)"
             strokeWidth={strokeWidth}
             strokeLinecap="round"
           />
-          {/* Foreground Animated Arc */}
+          {/* Filled arc */}
           <path
-            d="M 20 90 A 80 80 0 0 1 180 90"
+            d={arcPath}
             fill="none"
             stroke={color}
             strokeWidth={strokeWidth}
             strokeLinecap="round"
             strokeDasharray={circumference}
-            strokeDashoffset={strokeDashoffset}
-            className="transition-all duration-300 ease-in-out"
+            strokeDashoffset={animated ? filledOffset : circumference}
+            style={{
+              transition: animated ? "stroke-dashoffset 1.2s ease-out" : "none",
+            }}
           />
         </svg>
 
-        {/* Text Details Inside Arc */}
-        <div className="absolute flex flex-col items-center bottom-2">
-          <span className="text-4xl font-black transition-colors duration-500" style={{ color }}>
-            {clampedScore}
-          </span>
-          <span className="text-sm font-medium text-gray-500 dark:text-slate-400 mt-1">{statusText}</span>
+        {/* Center text */}
+        <div className="credit-gauge__center">
+          <span className="credit-gauge__score" style={{ color }}>{score}</span>
+          <span className="credit-gauge__band" style={{ color }}>{getBandLabel()}</span>
         </div>
+
+        {/* Min/Max */}
+        <span className="credit-gauge__min">{minScore}</span>
+        <span className="credit-gauge__max">{maxScore}</span>
       </div>
 
-      <div className="flex justify-between w-full text-xs text-gray-400 dark:text-slate-500 mt-4 px-4 font-mono">
-        <span>300</span>
-        <span>850</span>
-      </div>
+      <style jsx>{`
+        .credit-gauge {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+        }
+        .credit-gauge__label {
+          font-size: var(--text-xs);
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: var(--text-tertiary);
+          margin-bottom: var(--space-4);
+        }
+        .credit-gauge__svg-wrap {
+          position: relative;
+          width: 200px;
+          height: 200px;
+        }
+        .credit-gauge__center {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -40%);
+          text-align: center;
+        }
+        .credit-gauge__score {
+          display: block;
+          font-family: var(--font-display);
+          font-size: var(--text-5xl);
+          font-weight: 800;
+          letter-spacing: -0.02em;
+          line-height: 1;
+        }
+        .credit-gauge__band {
+          display: block;
+          font-size: var(--text-sm);
+          font-weight: 600;
+          margin-top: var(--space-1);
+        }
+        .credit-gauge__min,
+        .credit-gauge__max {
+          position: absolute;
+          bottom: 24px;
+          font-size: var(--text-xs);
+          color: var(--text-tertiary);
+          font-family: var(--font-mono);
+        }
+        .credit-gauge__min { left: 16px; }
+        .credit-gauge__max { right: 16px; }
+      `}</style>
     </div>
-
   );
 }

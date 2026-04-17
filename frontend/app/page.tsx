@@ -1,13 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { register, verifyOTP, sendOTP } from '@/lib/api';
+import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
+import OTPInput from '@/components/OTPInput';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import Background3D from '@/components/3d/Background3D';
 
-export default function LoginPage() {
+export default function AuthPage() {
   const router = useRouter();
-  const [step, setStep] = useState(1); // Step 1: Entry, Step 2: OTP
-  const [isLoginMode, setIsLoginMode] = useState(false); // Toggle between Register and Login
+  const [step, setStep] = useState(1); // 1: Entry, 2: OTP
+  const [isLoginMode, setIsLoginMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -23,9 +28,34 @@ export default function LoginPage() {
   // OTP state
   const [otp, setOtp] = useState('');
   const [otpIdentifier, setOtpIdentifier] = useState('');
+  const [otpTimer, setOtpTimer] = useState(300); // 5 minutes
+  const [canResend, setCanResend] = useState(false);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
+  // OTP countdown timer
+  useEffect(() => {
+    if (step !== 2 || otpTimer <= 0) {
+      if (otpTimer <= 0) setCanResend(true);
+      return;
+    }
+    const interval = setInterval(() => {
+      setOtpTimer((prev) => {
+        if (prev <= 1) {
+          setCanResend(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [step, otpTimer]);
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const handleInputChange = (name: string, value: string) => {
     setFormData((prev) => ({ ...prev, [name]: value }));
     setError('');
   };
@@ -45,6 +75,8 @@ export default function LoginPage() {
       const response = await register(formData);
       setSuccess(response.message);
       setOtpIdentifier(formData.email);
+      setOtpTimer(300);
+      setCanResend(false);
       setStep(2);
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message || 'Registration failed');
@@ -61,10 +93,11 @@ export default function LoginPage() {
 
     try {
       if (!loginIdentifier.trim()) throw new Error('Email or mobile is required');
-
-      const response = await sendOTP({ identifier: loginIdentifier });
+      await sendOTP({ identifier: loginIdentifier });
       setSuccess('OTP sent successfully!');
       setOtpIdentifier(loginIdentifier);
+      setOtpTimer(300);
+      setCanResend(false);
       setStep(2);
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message || 'Login failed');
@@ -81,13 +114,9 @@ export default function LoginPage() {
 
     try {
       if (!otp.match(/^\d{6}$/)) throw new Error('OTP must be 6 digits');
-
-      const response = await verifyOTP({ identifier: otpIdentifier, otp });
+      await verifyOTP({ identifier: otpIdentifier, otp });
       setSuccess('OTP verified! Redirecting...');
-      
-      setTimeout(() => {
-        router.push('/apply');
-      }, 1500);
+      setTimeout(() => router.push('/dashboard'), 1200);
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message || 'OTP verification failed');
     } finally {
@@ -96,13 +125,14 @@ export default function LoginPage() {
   };
 
   const handleResendOTP = async () => {
+    if (!canResend) return;
     setLoading(true);
     setError('');
-    setSuccess('');
-
     try {
       await sendOTP({ identifier: otpIdentifier });
       setSuccess('OTP resent successfully!');
+      setOtpTimer(300);
+      setCanResend(false);
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message || 'Failed to resend OTP');
     } finally {
@@ -110,144 +140,395 @@ export default function LoginPage() {
     }
   };
 
-  const toggleMode = () => {
-    setIsLoginMode(!isLoginMode);
-    setError('');
-    setSuccess('');
-  };
-
-  const handleBackToEntry = () => {
-    setStep(1);
-    setError('');
-    setSuccess('');
-    setOtp('');
-  };
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-900 dark:to-indigo-950 flex items-center justify-center p-4 transition-colors duration-500">
-      <div className="w-full max-w-md bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8 border border-white/20 dark:border-slate-700 backdrop-blur-sm transition-all duration-300">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-blue-600 dark:text-blue-400 mb-2">NexLoan</h1>
-          <p className="text-gray-600 dark:text-gray-400 text-sm">Powered by Theoremlabs</p>
-        </div>
+    <div className="auth-page">
+      <Background3D />
+      <ThemeToggle />
+      <div className="auth-card animate-card-entrance">
 
         {step === 1 ? (
-          // Step 1: Entry (Login or Register)
-          !isLoginMode ? (
-            <form onSubmit={handleRegister} className="space-y-5">
-              <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-6">Create Your Account</h2>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5 ml-1">Full Name</label>
-                <input
-                  type="text" name="full_name" value={formData.full_name} onChange={handleInputChange}
-                  placeholder="Enter your full name"
-                  className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-xl text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5 ml-1">Email</label>
-                <input
-                  type="email" name="email" value={formData.email} onChange={handleInputChange}
-                  placeholder="Enter your email"
-                  className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-xl text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5 ml-1">Mobile Number</label>
-                <input
-                  type="tel" name="mobile" value={formData.mobile} onChange={handleInputChange}
-                  placeholder="10-digit mobile number" maxLength={10}
-                  className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-xl text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                  required
-                />
-              </div>
-
-              {error && <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-700 dark:text-red-400 text-sm">{error}</div>}
-              {success && <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl text-green-700 dark:text-green-400 text-sm">{success}</div>}
-
-              <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 shadow-lg shadow-blue-500/30 disabled:bg-gray-400 dark:disabled:bg-slate-700 text-white font-semibold py-3 rounded-xl transition-all active:scale-95">
-                {loading ? 'Creating Account...' : 'Continue'}
-              </button>
-
-              <p className="text-center text-gray-600 dark:text-gray-400 text-sm mt-6">
-                Already have an account?{' '}
-                <button type="button" onClick={toggleMode} className="text-blue-600 dark:text-blue-400 hover:underline font-semibold">Sign in</button>
-              </p>
-            </form>
-          ) : (
-            <form onSubmit={handleLogin} className="space-y-5">
-              <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-6">Welcome Back</h2>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5 ml-1">Email or Mobile Number</label>
-                <input
-                  type="text" value={loginIdentifier} onChange={(e) => { setLoginIdentifier(e.target.value); setError(''); }}
-                  placeholder="Enter registered email or mobile"
-                  className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-xl text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                  required
-                />
-              </div>
-
-              {error && <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-700 dark:text-red-400 text-sm">{error}</div>}
-              {success && <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl text-green-700 dark:text-green-400 text-sm">{success}</div>}
-
-              <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 shadow-lg shadow-blue-500/30 disabled:bg-gray-400 dark:disabled:bg-slate-700 text-white font-semibold py-3 rounded-xl transition-all active:scale-95">
-                {loading ? 'Sending OTP...' : 'Send OTP'}
-              </button>
-
-              <p className="text-center text-gray-600 dark:text-gray-400 text-sm mt-6">
-                Don't have an account?{' '}
-                <button type="button" onClick={toggleMode} className="text-blue-600 dark:text-blue-400 hover:underline font-semibold">Create one</button>
-              </p>
-            </form>
-          )
-        ) : (
-          // Step 2: OTP Verification
-          <form onSubmit={handleVerifyOTP} className="space-y-5">
-            <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">Verify Your Identity</h2>
-            <p className="text-gray-600 dark:text-gray-400 text-sm mb-8">
-              We've sent a 6-digit OTP to <strong className="text-gray-900 dark:text-white">{otpIdentifier}</strong>
-            </p>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 text-center">Enter 6-digit OTP</label>
-              <input
-                type="text" value={otp} onChange={(e) => { setOtp(e.target.value.slice(0, 6)); setError(''); }}
-                placeholder="000000" maxLength={6}
-                className="w-full px-4 py-4 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-xl text-center text-3xl font-bold tracking-[0.5em] text-blue-600 dark:text-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-gray-200 dark:placeholder:text-slate-800"
-              />
+          <>
+            {/* ── Logo ────────────── */}
+            <div className="auth-card__logo">
+              <h1>NexLoan</h1>
+              <p>Powered by Theoremlabs</p>
             </div>
+            <div className="auth-card__divider" />
 
-            {error && <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-700 dark:text-red-400 text-sm">{error}</div>}
-            {success && <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl text-green-700 dark:text-green-400 text-sm">{success}</div>}
+            {!isLoginMode ? (
+              /* ── Register Form ────── */
+              <form onSubmit={handleRegister}>
+                <div className="auth-card__heading">
+                  <h2>Create your account</h2>
+                  <p>Join thousands of members. No paperwork.</p>
+                </div>
 
-            <button type="submit" disabled={loading || otp.length !== 6} className="w-full bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 shadow-lg shadow-blue-500/30 disabled:bg-gray-400 dark:disabled:bg-slate-700 text-white font-semibold py-3 rounded-xl transition-all active:scale-95 mb-4">
-              {loading ? 'Verifying...' : 'Verify OTP'}
+                <div className="auth-card__fields">
+                  <div className="animate-stagger" style={{ '--stagger-index': 0 } as React.CSSProperties}>
+                    <Input
+                      label="Full Name"
+                      value={formData.full_name}
+                      onChange={(e) => handleInputChange('full_name', e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="animate-stagger" style={{ '--stagger-index': 1 } as React.CSSProperties}>
+                    <Input
+                      label="Email Address"
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => handleInputChange('email', e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="animate-stagger" style={{ '--stagger-index': 2 } as React.CSSProperties}>
+                    <Input
+                      label="Mobile Number"
+                      type="tel"
+                      addon="+91"
+                      value={formData.mobile}
+                      onChange={(e) => handleInputChange('mobile', e.target.value.replace(/\D/g, '').slice(0, 10))}
+                      maxLength={10}
+                      required
+                    />
+                  </div>
+                </div>
+
+                {error && <div className="auth-card__alert auth-card__alert--error">{error}</div>}
+                {success && <div className="auth-card__alert auth-card__alert--success">{success}</div>}
+
+                <div className="auth-card__cta">
+                  <Button type="submit" size="lg" fullWidth loading={loading}>
+                    Continue →
+                  </Button>
+                </div>
+
+                <div className="auth-card__or">
+                  <span>or</span>
+                </div>
+
+                <p className="auth-card__switch">
+                  Already a member?{' '}
+                  <button type="button" onClick={() => { setIsLoginMode(true); setError(''); setSuccess(''); }}>
+                    Sign in
+                  </button>
+                </p>
+              </form>
+            ) : (
+              /* ── Login Form ──────── */
+              <form onSubmit={handleLogin}>
+                <div className="auth-card__heading">
+                  <h2>Welcome back</h2>
+                  <p>Sign in to your NexLoan account.</p>
+                </div>
+
+                <div className="auth-card__fields">
+                  <div className="animate-stagger" style={{ '--stagger-index': 0 } as React.CSSProperties}>
+                    <Input
+                      label="Email or Mobile Number"
+                      value={loginIdentifier}
+                      onChange={(e) => { setLoginIdentifier(e.target.value); setError(''); }}
+                      required
+                    />
+                  </div>
+                </div>
+
+                {error && <div className="auth-card__alert auth-card__alert--error">{error}</div>}
+                {success && <div className="auth-card__alert auth-card__alert--success">{success}</div>}
+
+                <div className="auth-card__cta">
+                  <Button type="submit" size="lg" fullWidth loading={loading}>
+                    Send OTP →
+                  </Button>
+                </div>
+
+                <div className="auth-card__or">
+                  <span>or</span>
+                </div>
+
+                <p className="auth-card__switch">
+                  Don&apos;t have an account?{' '}
+                  <button type="button" onClick={() => { setIsLoginMode(false); setError(''); setSuccess(''); }}>
+                    Create one
+                  </button>
+                </p>
+              </form>
+            )}
+
+            <div className="auth-card__footer">
+              <p>© 2026 NexLoan · Secured by AES-256 Encryption</p>
+            </div>
+          </>
+        ) : (
+          /* ── OTP Step ──────────── */
+          <form onSubmit={handleVerifyOTP}>
+            <button type="button" className="auth-card__back" onClick={() => { setStep(1); setOtp(''); setError(''); setSuccess(''); }}>
+              ← Back
             </button>
 
-            <div className="flex gap-4 text-center text-sm pt-4">
-              <button type="button" onClick={handleResendOTP} disabled={loading} className="flex-1 px-4 py-2 border border-gray-200 dark:border-slate-700 rounded-lg text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 font-medium disabled:opacity-50 transition">
+            <div className="auth-card__lock-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+            </div>
+
+            <div className="auth-card__heading" style={{ textAlign: 'center' }}>
+              <h2>Verify your identity</h2>
+              <p>
+                We sent a 6-digit code to <strong>{otpIdentifier}</strong>
+              </p>
+            </div>
+
+            <div style={{ marginTop: 'var(--space-6)' }}>
+              <OTPInput value={otp} onChange={setOtp} disabled={loading} />
+            </div>
+
+            <div className={`auth-card__timer ${otpTimer < 60 ? 'auth-card__timer--warning' : ''} ${otpTimer === 0 ? 'auth-card__timer--expired' : ''}`}>
+              {otpTimer > 0 ? (
+                <span>Code expires in <strong>{formatTime(otpTimer)}</strong></span>
+              ) : (
+                <span>Code expired.</span>
+              )}
+            </div>
+
+            {error && <div className="auth-card__alert auth-card__alert--error">{error}</div>}
+            {success && <div className="auth-card__alert auth-card__alert--success">{success}</div>}
+
+            <div className="auth-card__cta">
+              <Button type="submit" size="lg" fullWidth loading={loading} disabled={otp.length !== 6}>
+                Verify →
+              </Button>
+            </div>
+
+            <p className="auth-card__resend">
+              Didn&apos;t receive it?{' '}
+              <button type="button" onClick={handleResendOTP} disabled={!canResend || loading} className={canResend ? 'active' : ''}>
                 Resend OTP
               </button>
-              <button type="button" onClick={handleBackToEntry} disabled={loading} className="flex-1 px-4 py-2 border border-gray-200 dark:border-slate-700 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-700 font-medium disabled:opacity-50 transition">
-                Back
-              </button>
-            </div>
+            </p>
           </form>
         )}
-
-        {/* Footer */}
-        <div className="mt-10 pt-6 border-t border-gray-100 dark:border-slate-700 text-center text-[10px] uppercase tracking-widest text-gray-400 dark:text-gray-500 font-bold">
-          <p>© 2026 NexLoan • Secured by Advanced Encryption</p>
-        </div>
       </div>
-    </div>
 
+      <style jsx>{`
+        .auth-page {
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: transparent;
+          padding: var(--space-6);
+        }
+
+        .auth-card {
+          width: 420px;
+          max-width: 100%;
+          position: relative;
+          z-index: 10;
+          background: var(--surface-raised);
+          border: 1px solid var(--surface-border);
+          border-radius: var(--radius-2xl);
+          padding: var(--space-10);
+        }
+
+        /* ── Logo ─────────────────── */
+        .auth-card__logo {
+          text-align: center;
+          margin-bottom: var(--space-8);
+        }
+        .auth-card__logo h1 {
+          font-family: var(--font-display);
+          font-size: var(--text-2xl);
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+        .auth-card__logo p {
+          font-size: var(--text-xs);
+          color: var(--text-tertiary);
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          margin-top: var(--space-1);
+        }
+
+        .auth-card__divider {
+          height: 1px;
+          background: var(--surface-border);
+          margin-bottom: var(--space-8);
+        }
+
+        /* ── Heading ──────────────── */
+        .auth-card__heading {
+          margin-bottom: var(--space-6);
+        }
+        .auth-card__heading h2 {
+          font-size: var(--text-xl);
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+        .auth-card__heading p {
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+          margin-top: var(--space-1);
+        }
+        .auth-card__heading strong {
+          color: var(--text-primary);
+        }
+
+        /* ── Fields ───────────────── */
+        .auth-card__fields {
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-4);
+        }
+
+        /* ── Alerts ───────────────── */
+        .auth-card__alert {
+          padding: var(--space-3) var(--space-4);
+          border-radius: var(--radius-md);
+          font-size: var(--text-sm);
+          margin-top: var(--space-4);
+        }
+        .auth-card__alert--error {
+          background: rgba(239,68,68,0.08);
+          border: 1px solid rgba(239,68,68,0.2);
+          color: var(--color-error);
+        }
+        .auth-card__alert--success {
+          background: rgba(34,197,94,0.08);
+          border: 1px solid rgba(34,197,94,0.2);
+          color: var(--color-success);
+        }
+
+        /* ── CTA ──────────────────── */
+        .auth-card__cta {
+          margin-top: var(--space-6);
+        }
+
+        /* ── Or divider ───────────── */
+        .auth-card__or {
+          display: flex;
+          align-items: center;
+          gap: var(--space-4);
+          margin: var(--space-6) 0;
+        }
+        .auth-card__or::before,
+        .auth-card__or::after {
+          content: '';
+          flex: 1;
+          height: 1px;
+          background: var(--surface-border);
+        }
+        .auth-card__or span {
+          font-size: var(--text-sm);
+          color: var(--text-tertiary);
+        }
+
+        /* ── Switch ───────────────── */
+        .auth-card__switch {
+          text-align: center;
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+        }
+        .auth-card__switch button {
+          color: var(--text-accent);
+          font-weight: 600;
+          background: none;
+          border: none;
+          cursor: pointer;
+          font-family: var(--font-body);
+          font-size: inherit;
+          text-decoration: none;
+        }
+        .auth-card__switch button:hover {
+          text-decoration: underline;
+        }
+
+        /* ── Footer ───────────────── */
+        .auth-card__footer {
+          margin-top: var(--space-8);
+          text-align: center;
+        }
+        .auth-card__footer p {
+          font-size: var(--text-xs);
+          color: var(--text-tertiary);
+        }
+
+        /* ── OTP: Back button ─────── */
+        .auth-card__back {
+          background: none;
+          border: none;
+          color: var(--text-secondary);
+          font-family: var(--font-body);
+          font-size: var(--text-sm);
+          cursor: pointer;
+          padding: 0;
+          margin-bottom: var(--space-6);
+          transition: color var(--transition-fast);
+        }
+        .auth-card__back:hover {
+          color: var(--text-primary);
+        }
+
+        /* ── OTP: Lock icon ───────── */
+        .auth-card__lock-icon {
+          display: flex;
+          justify-content: center;
+          margin-bottom: var(--space-4);
+          color: var(--accent-400);
+        }
+
+        /* ── OTP: Timer ───────────── */
+        .auth-card__timer {
+          text-align: center;
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+          margin-top: var(--space-4);
+        }
+        .auth-card__timer strong {
+          font-family: var(--font-mono);
+          font-weight: 700;
+        }
+        .auth-card__timer--warning strong {
+          color: var(--color-warning);
+        }
+        .auth-card__timer--expired {
+          color: var(--color-error);
+        }
+
+        /* ── OTP: Resend ──────────── */
+        .auth-card__resend {
+          text-align: center;
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+          margin-top: var(--space-4);
+        }
+        .auth-card__resend button {
+          background: none;
+          border: none;
+          font-family: var(--font-body);
+          font-size: inherit;
+          cursor: pointer;
+          color: var(--text-disabled);
+          font-weight: 600;
+        }
+        .auth-card__resend button.active {
+          color: var(--text-accent);
+          cursor: pointer;
+        }
+        .auth-card__resend button.active:hover {
+          text-decoration: underline;
+        }
+        .auth-card__resend button:disabled {
+          cursor: not-allowed;
+        }
+
+        @media (max-width: 640px) {
+          .auth-card {
+            padding: var(--space-6);
+          }
+        }
+      `}</style>
+    </div>
   );
 }

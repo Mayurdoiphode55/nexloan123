@@ -1,10 +1,19 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { getKYCQueue, approveKYC, rejectKYC, KYCQueueItem, getAdminAnalytics, AnalyticsResponse } from "@/lib/api";
+import { 
+  getKYCQueue, 
+  approveKYC, 
+  rejectKYC, 
+  KYCQueueItem, 
+  getAdminAnalytics, 
+  AnalyticsResponse 
+} from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
-import LoanStatusBadge from "@/components/LoanStatusBadge";
-import { SkeletonText, SkeletonCard } from "@/components/SkeletonLoader";
+import Badge from "@/components/ui/Badge";
+import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
+import { SkeletonCard, SkeletonText } from "@/components/ui/Skeleton";
 
 export default function AdminPage() {
   const [queue, setQueue] = useState<KYCQueueItem[]>([]);
@@ -13,7 +22,7 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [expandedLoan, setExpandedLoan] = useState<string | null>(null);
   const [processingMap, setProcessingMap] = useState<Record<string, string>>({});
-  const { addToast } = useToast();
+  const { showToast } = useToast();
 
   const fetchDashboardData = async () => {
     try {
@@ -40,13 +49,12 @@ export default function AdminPage() {
   const handleApprove = async (loanId: string, loanNumber: string) => {
     try {
       setProcessingMap((prev) => ({ ...prev, [loanId]: "approving" }));
-      const res = await approveKYC(loanId);
-      addToast(`✅ ${loanNumber} approved — ready for underwriting`, "success");
-      // Remove from queue
+      await approveKYC(loanId);
+      showToast(`✅ ${loanNumber} approved — ready for underwriting`, "success");
       setQueue((prev) => prev.filter((item) => item.loan_id !== loanId));
     } catch (err) {
-      console.error("Failed to approve KYC", err);
-      addToast(`Failed to approve ${loanNumber}`, "error");
+      console.error(err);
+      showToast(`Failed to approve ${loanNumber}`, "error");
     } finally {
       setProcessingMap((prev) => {
         const next = { ...prev };
@@ -60,12 +68,12 @@ export default function AdminPage() {
     if (!confirm(`Are you sure you want to reject KYC for ${loanNumber}? This cannot be undone.`)) return;
     try {
       setProcessingMap((prev) => ({ ...prev, [loanId]: "rejecting" }));
-      const res = await rejectKYC(loanId);
-      addToast(`❌ ${loanNumber} rejected`, "error");
+      await rejectKYC(loanId);
+      showToast(`❌ ${loanNumber} rejected`, "error");
       setQueue((prev) => prev.filter((item) => item.loan_id !== loanId));
     } catch (err) {
-      console.error("Failed to reject KYC", err);
-      addToast(`Failed to reject ${loanNumber}`, "error");
+      console.error(err);
+      showToast(`Failed to reject ${loanNumber}`, "error");
     } finally {
       setProcessingMap((prev) => {
         const next = { ...prev };
@@ -80,360 +88,416 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="bg-gray-50 dark:bg-slate-900 transition-colors duration-500">
-      {/* Header */}
-      <div className="bg-white dark:bg-slate-800 border-b border-gray-100 dark:border-slate-700 shadow-sm">
-        <div className="max-w-6xl mx-auto px-6 py-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">
-              Admin Dashboard
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
-              KYC Manual Review Queue • Theoremlabs Internal
-            </p>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400 text-xs font-bold px-3 py-1.5 rounded-full border border-yellow-200 dark:border-yellow-800 uppercase tracking-widest">
-              {queue.length} Pending
-            </span>
-            <button
-              onClick={fetchDashboardData}
-              disabled={loading}
-              className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors disabled:opacity-50"
-            >
-              ↻ Refresh
-            </button>
-          </div>
+    <div className="admin-container">
+      {/* ── Header ─────────────────────────── */}
+      <div className="admin-header">
+        <div>
+          <h1 className="admin-header__title">Admin Panel</h1>
+          <p className="admin-header__subtitle">Internal Platform Management</p>
+        </div>
+        <div className="admin-header__actions">
+          <Badge variant="accent">{queue.length} Pending KYC</Badge>
+          <Button variant="ghost" size="sm" onClick={fetchDashboardData} disabled={loading}>
+            ↻ Refresh
+          </Button>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-6 py-8">
-        {/* Error State */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-700 dark:text-red-400 text-sm">
-            {error}
+      {error && (
+        <div className="admin-alert admin-alert--error">{error}</div>
+      )}
+
+      {/* ── Analytics ──────────────────────── */}
+      {!loading && analytics && (
+        <div className="admin-section">
+          <h2 className="admin-section__title">Platform Overview</h2>
+          <div className="analytics-grid">
+            <Card>
+              <span className="analytics-label">Total Loans</span>
+              <span className="analytics-value mono-number text-primary">{analytics.total_loans}</span>
+            </Card>
+            <Card>
+              <span className="analytics-label">Approval Rate</span>
+              <span className="analytics-value mono-number text-success">{analytics.approval_rate}%</span>
+            </Card>
+            <Card>
+              <span className="analytics-label">Total Revenue</span>
+              <span className="analytics-value mono-number text-accent">₹{analytics.total_revenue.toLocaleString('en-IN')}</span>
+            </Card>
+            <Card>
+              <span className="analytics-label">Active Loans</span>
+              <span className="analytics-value mono-number text-info">{analytics.status_breakdown["ACTIVE"] || 0}</span>
+            </Card>
           </div>
+
+          <Card variant="elevated" className="mt-6">
+            <span className="analytics-label mb-4 block">Status Breakdown</span>
+            <div className="status-bar">
+              {Object.entries(analytics.status_breakdown).map(([status, count]) => {
+                const percentage = (count / analytics.total_loans) * 100;
+                if (percentage === 0) return null;
+                return (
+                  <div 
+                    key={status} 
+                    className={`status-segment status-segment--${status}`}
+                    style={{ width: `${percentage}%` }}
+                    title={`${status}: ${count}`}
+                  />
+                );
+              })}
+            </div>
+            <div className="status-legend">
+              {Object.entries(analytics.status_breakdown).map(([status, count]) => (
+                <div key={status} className="status-legend__item">
+                  <span className={`status-legend__dot status-segment--${status}`} />
+                  {status} <span className="text-tertiary">({count})</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {loading && (
+        <div className="analytics-grid mb-8">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+      )}
+
+      {/* ── KYC Queue ──────────────────────── */}
+      <div className="admin-section">
+        <h2 className="admin-section__title">KYC Review Queue</h2>
+
+        {!loading && !error && queue.length === 0 && (
+          <Card className="text-center py-12">
+             <div className="text-4xl mb-4 text-success">✓</div>
+             <p className="font-bold text-lg">All Clear!</p>
+             <p className="text-secondary text-sm">No loans pending manual review.</p>
+          </Card>
         )}
 
-        {/* Loading State */}
         {loading && (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-              <SkeletonCard />
-              <SkeletonCard />
-              <SkeletonCard />
-              <SkeletonCard />
-            </div>
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 p-6 animate-pulse">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-2">
-                    <SkeletonText className="w-40 h-5" />
-                    <SkeletonText className="w-60 h-3" />
-                  </div>
-                  <div className="flex gap-3">
-                    <SkeletonText className="w-20 h-8 rounded-lg" />
-                    <SkeletonText className="w-20 h-8 rounded-lg" />
-                  </div>
-                </div>
-              </div>
-            ))}
+             <SkeletonCard />
+             <SkeletonCard />
           </div>
         )}
 
-        {/* Analytics Dashboard */}
-        {!loading && !error && analytics && (
-          <div className="mb-8">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Platfom Overview</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 p-6 shadow-sm">
-                <h3 className="text-sm font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-2">Total Loans</h3>
-                <p className="text-3xl font-black text-blue-600 dark:text-blue-400">{analytics.total_loans}</p>
-              </div>
-              <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 p-6 shadow-sm">
-                <h3 className="text-sm font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-2">Approval Rate</h3>
-                <p className="text-3xl font-black text-green-600 dark:text-green-400">{analytics.approval_rate}%</p>
-              </div>
-              <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 p-6 shadow-sm">
-                <h3 className="text-sm font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-2">Total Revenue</h3>
-                <p className="text-3xl font-black text-purple-600 dark:text-purple-400">₹{analytics.total_revenue.toLocaleString()}</p>
-              </div>
-              <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 p-6 shadow-sm">
-                <h3 className="text-sm font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-2">Active Loans</h3>
-                <p className="text-3xl font-black text-indigo-600 dark:text-indigo-400">{analytics.status_breakdown["ACTIVE"] || 0}</p>
-              </div>
-            </div>
-            
-            {/* Status Breakdown Bar */}
-            <div className="mt-6 bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 p-6 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-4">Status Breakdown</h3>
-              <div className="flex w-full h-8 rounded-full overflow-hidden mb-4 bg-gray-100 dark:bg-slate-700">
-                {Object.entries(analytics.status_breakdown).map(([status, count]) => {
-                  const percentage = (count / analytics.total_loans) * 100;
-                  if (percentage === 0) return null;
-                  
-                  let colorClass = "bg-gray-400";
-                  if (status === "ACTIVE" || status === "DISBURSED") colorClass = "bg-blue-500";
-                  if (status === "APPROVED") colorClass = "bg-green-500";
-                  if (status === "REJECTED") colorClass = "bg-red-500";
-                  if (status === "INQUIRY" || status === "APPLICATION") colorClass = "bg-purple-500";
-                  if (status === "KYC_PENDING" || status === "KYC_VERIFIED") colorClass = "bg-yellow-500";
-                  if (status === "CLOSED" || status === "PRE_CLOSED") colorClass = "bg-teal-500";
-                  
-                  return (
-                    <div 
-                      key={status} 
-                      className={`h-full ${colorClass} transition-all hover:opacity-80 relative group`}
-                      style={{ width: `${percentage}%` }}
-                      title={`${status}: ${count}`}
-                    />
-                  );
-                })}
-              </div>
-              <div className="flex flex-wrap gap-4 text-xs font-semibold text-gray-600 dark:text-gray-300">
-                 {Object.entries(analytics.status_breakdown).map(([status, count]) => (
-                   <div key={status} className="flex items-center gap-1.5">
-                     <span className={`w-2.5 h-2.5 rounded-full ${
-                        status === "ACTIVE" || status === "DISBURSED" ? "bg-blue-500" :
-                        status === "APPROVED" ? "bg-green-500" :
-                        status === "REJECTED" ? "bg-red-500" :
-                        status === "INQUIRY" || status === "APPLICATION" ? "bg-purple-500" :
-                        status === "KYC_PENDING" || status === "KYC_VERIFIED" ? "bg-yellow-500" :
-                        status === "CLOSED" || status === "PRE_CLOSED" ? "bg-teal-500" : "bg-gray-400"
-                     }`} />
-                     {status} ({count})
-                   </div>
-                 ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Pending KYC Queue</h2>
-        {/* Empty State */}
-        {!loading && !error && queue.length === 0 && (
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 p-16 text-center">
-            <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg className="w-10 h-10 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">All Clear!</h2>
-            <p className="text-gray-500 dark:text-slate-400">No loans pending KYC review. All applications have been processed.</p>
-          </div>
-        )}
-
-        {/* Queue Items */}
         {!loading && queue.length > 0 && (
-          <div className="space-y-4">
+          <div className="queue-list">
             {queue.map((item) => {
               const isExpanded = expandedLoan === item.loan_id;
-              const isProcessing = !!processingMap[item.loan_id];
+              const processing = processingMap[item.loan_id];
 
               return (
-                <div
-                  key={item.loan_id}
-                  className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm overflow-hidden transition-all duration-300 hover:shadow-md"
-                >
-                  {/* Row Header */}
-                  <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div
-                      className="flex-1 cursor-pointer"
-                      onClick={() => toggleExpand(item.loan_id)}
-                    >
-                      <div className="flex items-center gap-3 mb-1">
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                          {item.applicant_name}
-                        </h3>
-                        <LoanStatusBadge status="KYC_PENDING" />
+                <Card key={item.loan_id} className="queue-item" padding="default" variant={isExpanded ? "elevated" : "default"}>
+                  <div className="queue-item__header">
+                    <div className="queue-item__info cursor-pointer" onClick={() => toggleExpand(item.loan_id)}>
+                      <div className="flex items-center gap-3">
+                        <h3 className="queue-item__name">{item.applicant_name}</h3>
+                        <Badge variant="warning">KYC PENDING</Badge>
                       </div>
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-slate-400">
-                        <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{item.loan_number}</span>
+                      <div className="queue-item__meta">
+                        <span className="mono-number text-accent font-bold">{item.loan_number}</span>
                         <span>•</span>
-                        <span>₹{item.loan_amount.toLocaleString()}</span>
+                        <span>₹{item.loan_amount.toLocaleString('en-IN')}</span>
                         <span>•</span>
                         <span>{item.tenure_months}mo</span>
                         <span>•</span>
                         <span>{item.applicant_email}</span>
                       </div>
-                      <div className="mt-2 flex items-center gap-2">
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                          item.ai_verdict === "MANUAL_REVIEW"
-                            ? "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400"
-                            : item.ai_verdict === "FAIL"
-                            ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400"
-                            : "bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400"
-                        }`}>
+                      <div className="queue-item__ai">
+                        <Badge variant={item.ai_verdict === "FAIL" ? "error" : "accent"}>
                           AI: {item.ai_verdict || "N/A"}
-                        </span>
-                        {item.ai_remarks && (
-                          <span className="text-xs text-gray-400 dark:text-slate-500 italic truncate max-w-[300px]">
-                            "{item.ai_remarks}"
-                          </span>
-                        )}
+                        </Badge>
+                        {item.ai_remarks && <span className="text-tertiary text-xs italic">"{item.ai_remarks}"</span>}
                       </div>
                     </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <button
-                        onClick={() => toggleExpand(item.loan_id)}
-                        className="text-xs font-bold text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-white bg-gray-100 dark:bg-slate-900 px-3 py-2 rounded-lg transition-all"
-                      >
-                        {isExpanded ? "▲ Collapse" : "▼ View Docs"}
-                      </button>
-                      <button
+                    <div className="queue-item__actions">
+                      <Button variant="ghost" size="sm" onClick={() => toggleExpand(item.loan_id)}>
+                        {isExpanded ? "▲ Hide" : "▼ Review"}
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        loading={processing === "approving"} 
+                        disabled={!!processing}
                         onClick={() => handleApprove(item.loan_id, item.loan_number)}
-                        disabled={isProcessing}
-                        className="bg-green-600 dark:bg-green-700 hover:bg-green-700 dark:hover:bg-green-600 disabled:bg-green-400 dark:disabled:bg-slate-700 text-white text-xs font-black uppercase tracking-widest px-5 py-2.5 rounded-xl transition-all shadow shadow-green-500/20 active:scale-95"
                       >
-                        {processingMap[item.loan_id] === "approving" ? "..." : "Approve"}
-                      </button>
-                      <button
+                        Approve
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="destructive" 
+                        loading={processing === "rejecting"} 
+                        disabled={!!processing}
                         onClick={() => handleReject(item.loan_id, item.loan_number)}
-                        disabled={isProcessing}
-                        className="bg-red-600 dark:bg-red-700 hover:bg-red-700 dark:hover:bg-red-600 disabled:bg-red-400 dark:disabled:bg-slate-700 text-white text-xs font-black uppercase tracking-widest px-5 py-2.5 rounded-xl transition-all shadow shadow-red-500/20 active:scale-95"
                       >
-                        {processingMap[item.loan_id] === "rejecting" ? "..." : "Reject"}
-                      </button>
+                        Reject
+                      </Button>
                     </div>
                   </div>
 
-                  {/* Expanded Document Preview */}
                   {isExpanded && (
-                    <div className="border-t border-gray-100 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 p-6 animate-in fade-in slide-in-from-top-2 duration-300">
-                      <h4 className="text-xs font-black text-gray-500 dark:text-slate-500 uppercase tracking-widest mb-4">
-                        Document Analysis
-                      </h4>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* PAN Card */}
-                        <div className="space-y-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold text-gray-800 dark:text-white">PAN Card</span>
-                            {item.pan_legible !== null && (
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
-                                item.pan_legible
-                                  ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
-                                  : "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400"
-                              }`}>
-                                {item.pan_legible ? "Legible" : "Not Legible"}
-                              </span>
-                            )}
-                          </div>
-
-                          {item.pan_doc_url ? (
-                            <div className="border dark:border-slate-700 rounded-xl overflow-hidden bg-white dark:bg-slate-800 shadow-inner">
-                              <img
-                                src={item.pan_doc_url}
-                                alt="PAN Card"
-                                className="w-full h-48 object-contain bg-gray-100 dark:bg-slate-900"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src = "";
-                                  (e.target as HTMLImageElement).alt = "Failed to load image";
-                                }}
-                              />
-                            </div>
-                          ) : (
-                            <div className="border dark:border-slate-700 rounded-xl bg-gray-100 dark:bg-slate-800 h-48 flex items-center justify-center">
-                              <span className="text-sm text-gray-400 dark:text-slate-600">No document uploaded</span>
-                            </div>
-                          )}
-
-                          <div className="text-xs space-y-1 text-gray-500 dark:text-slate-400">
-                            <p><span className="font-bold">Extracted Name:</span> {item.pan_name_extracted || "N/A"}</p>
-                          </div>
+                    <div className="queue-item__body animate-card-entrance">
+                      <h4 className="label-caps mb-4">Document Analysis</h4>
+                      
+                      <div className="queue-docs">
+                        {/* PAN */}
+                        <div className="queue-doc bg-surface-sunken p-4 rounded-xl">
+                           <div className="flex justify-between items-center mb-3">
+                             <span className="font-bold text-sm">PAN Card</span>
+                             {item.pan_legible !== null && (
+                               <Badge variant={item.pan_legible ? "success" : "error"}>{item.pan_legible ? "Legible" : "Not Legible"}</Badge>
+                             )}
+                           </div>
+                           {item.pan_doc_url ? (
+                             <img src={item.pan_doc_url} alt="PAN" className="queue-doc__img" />
+                           ) : (
+                             <div className="queue-doc__img queue-doc__img--empty">No PAN</div>
+                           )}
+                           <div className="mt-3 text-xs">
+                             <span className="text-secondary">Extracted:</span> <span className="font-bold">{item.pan_name_extracted || "Wait..."}</span>
+                           </div>
                         </div>
 
-                        {/* Aadhaar Card */}
-                        <div className="space-y-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold text-gray-800 dark:text-white">Aadhaar Card</span>
-                            {item.aadhaar_legible !== null && (
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
-                                item.aadhaar_legible
-                                  ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
-                                  : "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400"
-                              }`}>
-                                {item.aadhaar_legible ? "Legible" : "Not Legible"}
-                              </span>
-                            )}
-                            {item.aadhaar_photo_present !== null && (
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
-                                item.aadhaar_photo_present
-                                  ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
-                                  : "bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400"
-                              }`}>
-                                {item.aadhaar_photo_present ? "Photo ✓" : "No Photo"}
-                              </span>
-                            )}
-                          </div>
-
-                          {item.aadhaar_doc_url ? (
-                            <div className="border dark:border-slate-700 rounded-xl overflow-hidden bg-white dark:bg-slate-800 shadow-inner">
-                              <img
-                                src={item.aadhaar_doc_url}
-                                alt="Aadhaar Card"
-                                className="w-full h-48 object-contain bg-gray-100 dark:bg-slate-900"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src = "";
-                                  (e.target as HTMLImageElement).alt = "Failed to load image";
-                                }}
-                              />
-                            </div>
-                          ) : (
-                            <div className="border dark:border-slate-700 rounded-xl bg-gray-100 dark:bg-slate-800 h-48 flex items-center justify-center">
-                              <span className="text-sm text-gray-400 dark:text-slate-600">No document uploaded</span>
-                            </div>
-                          )}
-
-                          <div className="text-xs space-y-1 text-gray-500 dark:text-slate-400">
-                            <p><span className="font-bold">Extracted Name:</span> {item.aadhaar_name_extracted || "N/A"}</p>
-                          </div>
+                        {/* Aadhaar */}
+                        <div className="queue-doc bg-surface-sunken p-4 rounded-xl">
+                           <div className="flex justify-between items-center mb-3">
+                             <span className="font-bold text-sm">Aadhaar</span>
+                             <div className="flex gap-2">
+                               {item.aadhaar_legible !== null && (
+                                 <Badge variant={item.aadhaar_legible ? "success" : "error"}>{item.aadhaar_legible ? "Legible" : "Not Legible"}</Badge>
+                               )}
+                               {item.aadhaar_photo_present !== null && (
+                                 <Badge variant={item.aadhaar_photo_present ? "info" : "neutral"}>{item.aadhaar_photo_present ? "Photo ✓" : "No Photo"}</Badge>
+                               )}
+                             </div>
+                           </div>
+                           {item.aadhaar_doc_url ? (
+                             <img src={item.aadhaar_doc_url} alt="Aadhaar" className="queue-doc__img" />
+                           ) : (
+                             <div className="queue-doc__img queue-doc__img--empty">No Aadhaar</div>
+                           )}
+                           <div className="mt-3 text-xs">
+                             <span className="text-secondary">Extracted:</span> <span className="font-bold">{item.aadhaar_name_extracted || "Wait..."}</span>
+                           </div>
                         </div>
                       </div>
 
-                      {/* Application Details */}
-                      <div className="mt-6 pt-4 border-t border-gray-200 dark:border-slate-800">
-                        <h4 className="text-xs font-black text-gray-500 dark:text-slate-500 uppercase tracking-widest mb-3">
-                          Application Details
-                        </h4>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-                          <div>
-                            <span className="block text-gray-400 dark:text-slate-500 text-xs mb-0.5">Amount</span>
-                            <span className="font-bold text-gray-900 dark:text-white">₹{item.loan_amount.toLocaleString()}</span>
-                          </div>
-                          <div>
-                            <span className="block text-gray-400 dark:text-slate-500 text-xs mb-0.5">Tenure</span>
-                            <span className="font-bold text-gray-900 dark:text-white">{item.tenure_months} months</span>
-                          </div>
-                          <div>
-                            <span className="block text-gray-400 dark:text-slate-500 text-xs mb-0.5">Purpose</span>
-                            <span className="font-bold text-gray-900 dark:text-white">{item.purpose || "N/A"}</span>
-                          </div>
-                          <div>
-                            <span className="block text-gray-400 dark:text-slate-500 text-xs mb-0.5">Applied On</span>
-                            <span className="font-bold text-gray-900 dark:text-white">
-                              {item.created_at ? new Date(item.created_at).toLocaleDateString() : "N/A"}
-                            </span>
-                          </div>
+                      <div className="mt-6 pt-4 border-t border-surface-border">
+                        <h4 className="label-caps mb-3">Application Details</h4>
+                        <div className="queue-details">
+                          <div><span className="text-tertiary text-xs block">Amount</span> <span className="font-bold">₹{item.loan_amount.toLocaleString('en-IN')}</span></div>
+                          <div><span className="text-tertiary text-xs block">Tenure</span> <span className="font-bold">{item.tenure_months} MO</span></div>
+                          <div><span className="text-tertiary text-xs block">Purpose</span> <span className="font-bold">{item.purpose || "N/A"}</span></div>
+                          <div><span className="text-tertiary text-xs block">Applied</span> <span className="font-bold">{new Date(item.created_at).toLocaleDateString('en-IN')}</span></div>
                         </div>
                       </div>
                     </div>
                   )}
-                </div>
+                </Card>
               );
             })}
           </div>
         )}
-
-        {/* Footer Note */}
-        <div className="mt-12 text-center">
-          <p className="text-xs text-gray-400 dark:text-slate-600 uppercase tracking-widest font-bold">
-            ⚠️ Prototype Mode — No Authentication Guard on Admin Endpoints
-          </p>
-        </div>
       </div>
+
+      <style jsx>{`
+        .text-primary { color: var(--text-primary); }
+        .text-secondary { color: var(--text-secondary); }
+        .text-tertiary { color: var(--text-tertiary); }
+        .text-success { color: var(--color-success); }
+        .text-accent { color: var(--text-accent); }
+        .text-info { color: var(--color-info); }
+        .bg-surface-sunken { background: var(--surface-sunken); }
+
+        .admin-container {
+          max-width: 1200px;
+          margin: 0 auto;
+        }
+        
+        .admin-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-end;
+          margin-bottom: var(--space-8);
+          padding-bottom: var(--space-4);
+          border-bottom: 1px solid var(--surface-border);
+        }
+        .admin-header__title {
+          font-family: var(--font-display);
+          font-size: var(--text-3xl);
+          font-weight: 700;
+        }
+        .admin-header__subtitle {
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+          margin-top: var(--space-1);
+        }
+        .admin-header__actions {
+          display: flex;
+          align-items: center;
+          gap: var(--space-4);
+        }
+
+        .admin-alert {
+          padding: var(--space-4);
+          border-radius: var(--radius-md);
+          margin-bottom: var(--space-6);
+        }
+        .admin-alert--error {
+          background: rgba(239, 68, 68, 0.1);
+          color: var(--color-error);
+          border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .admin-section {
+          margin-bottom: var(--space-10);
+        }
+        .admin-section__title {
+          font-family: var(--font-display);
+          font-size: var(--text-xl);
+          font-weight: 600;
+          margin-bottom: var(--space-6);
+        }
+
+        .analytics-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: var(--space-4);
+        }
+        .analytics-label {
+          display: block;
+          font-size: var(--text-xs);
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: var(--text-tertiary);
+        }
+        .analytics-value {
+          display: block;
+          font-size: var(--text-4xl);
+          font-weight: 700;
+          margin-top: var(--space-2);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .status-bar {
+          display: flex;
+          height: 12px;
+          border-radius: var(--radius-full);
+          overflow: hidden;
+          background: var(--surface-sunken);
+          margin-bottom: var(--space-4);
+        }
+        .status-segment { transition: width var(--transition-base); }
+        .status-segment--ACTIVE, .status-segment--DISBURSED { background: var(--color-info); }
+        .status-segment--APPROVED { background: var(--color-success); }
+        .status-segment--REJECTED { background: var(--color-error); }
+        .status-segment--INQUIRY, .status-segment--APPLICATION { background: var(--accent-400); }
+        .status-segment--KYC_PENDING, .status-segment--KYC_VERIFIED { background: var(--color-warning); }
+        .status-segment--CLOSED, .status-segment--PRE_CLOSED { background: #14b8a6; }
+
+        .status-legend {
+          display: flex;
+          flex-wrap: wrap;
+          gap: var(--space-4);
+          font-size: var(--text-xs);
+          font-weight: 500;
+        }
+        .status-legend__item {
+          display: flex;
+          align-items: center;
+          gap: var(--space-2);
+        }
+        .status-legend__dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+        }
+
+        .queue-list {
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-4);
+        }
+        .queue-item__header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: var(--space-4);
+        }
+        .queue-item__name {
+          font-size: var(--text-lg);
+          font-weight: 700;
+        }
+        .queue-item__meta {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: var(--space-2);
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+          margin-top: var(--space-1);
+        }
+        .queue-item__ai {
+          display: flex;
+          align-items: center;
+          gap: var(--space-2);
+          margin-top: var(--space-2);
+        }
+        .queue-item__actions {
+          display: flex;
+          align-items: center;
+          gap: var(--space-2);
+          flex-shrink: 0;
+        }
+        .queue-item__body {
+          margin-top: var(--space-4);
+          padding-top: var(--space-4);
+          border-top: 1px solid var(--surface-border);
+        }
+        .queue-docs {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: var(--space-4);
+        }
+        .queue-doc__img {
+          width: 100%;
+          height: 200px;
+          object-fit: cover;
+          border-radius: var(--radius-md);
+          background: #000;
+        }
+        .queue-doc__img--empty {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: var(--surface-base);
+          color: var(--text-tertiary);
+          font-size: var(--text-sm);
+        }
+        .queue-details {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: var(--space-4);
+          font-size: var(--text-sm);
+        }
+
+        @media (max-width: 768px) {
+          .admin-header { flex-direction: column; align-items: flex-start; gap: var(--space-4); }
+          .queue-item__header { flex-direction: column; }
+          .queue-item__actions { width: 100%; justify-content: stretch; }
+          .queue-docs { grid-template-columns: 1fr; }
+          .queue-details { grid-template-columns: 1fr 1fr; }
+        }
+      `}</style>
     </div>
   );
 }

@@ -2,9 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
+import Card from '@/components/ui/Card';
+import Badge from '@/components/ui/Badge';
+import LoanSlider from '@/components/LoanSlider';
 import KYCUpload from '@/components/KYCUpload';
-import LoanStatusBadge from '@/components/LoanStatusBadge';
 import { createInquiry, uploadKYC } from '@/lib/api';
+
+const STEPS = ['Personal', 'Loan Detail', 'KYC', 'Confirm'];
 
 export default function ApplyPage() {
   const router = useRouter();
@@ -12,12 +18,9 @@ export default function ApplyPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [loanData, setLoanData] = useState<any>(null);
-  
-  // Auth User Data
   const [user, setUser] = useState<any>(null);
-  
+
   useEffect(() => {
-    // Load user from localStorage immediately
     const userData = localStorage.getItem('nexloan_user');
     if (userData) {
       setUser(JSON.parse(userData));
@@ -26,26 +29,23 @@ export default function ApplyPage() {
     }
   }, [router]);
 
-  // Step 1 & 2 forms
   const [formData, setFormData] = useState({
     date_of_birth: '',
     employment_type: 'SALARIED',
-    loan_amount: 100000,
+    loan_amount: 500000,
     purpose: 'Other',
     tenure_months: 36,
     monthly_income: 50000,
     existing_emi: 0,
   });
 
-  // Step 3 forms
   const [panFile, setPanFile] = useState<File | null>(null);
   const [aadhaarFile, setAadhaarFile] = useState<File | null>(null);
   const [kycResult, setKycResult] = useState<any>(null);
 
-  // Live EMI Calculator (Estimate)
   const calculateEstimateEMI = () => {
     const P = formData.loan_amount;
-    const r = 15 / (12 * 100); // generic 15% rate for estimate
+    const r = 15 / (12 * 100);
     const n = formData.tenure_months;
     if (P === 0 || n === 0) return 0;
     const emi = (P * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
@@ -64,11 +64,8 @@ export default function ApplyPage() {
     e.preventDefault();
     setLoading(true);
     setError('');
-
     try {
       if (!formData.date_of_birth) throw new Error("Date of Birth is required");
-      
-      // Combine with user data
       const inquiryPayload = {
         loan_amount: formData.loan_amount,
         tenure_months: formData.tenure_months,
@@ -76,12 +73,11 @@ export default function ApplyPage() {
         monthly_income: formData.monthly_income,
         employment_type: formData.employment_type,
         existing_emi: formData.existing_emi,
-        date_of_birth: formData.date_of_birth + "T00:00:00Z" // Fast API datetime format
+        date_of_birth: formData.date_of_birth + "T00:00:00Z",
       };
-
       const response = await createInquiry(inquiryPayload);
       setLoanData(response);
-      setStep(3); // Move to KYC
+      setStep(3);
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message || "Failed to create inquiry");
     } finally {
@@ -94,14 +90,12 @@ export default function ApplyPage() {
       setError("Please upload both PAN and Aadhaar cards.");
       return;
     }
-
     setLoading(true);
     setError('');
-
     try {
       const response = await uploadKYC(loanData.loan_id, panFile, aadhaarFile);
       setKycResult(response);
-      setStep(4); // Move to Confirmation
+      setStep(4);
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message || "Failed to upload KYC");
     } finally {
@@ -109,298 +103,575 @@ export default function ApplyPage() {
     }
   };
 
-  if (!user) return <div className="min-h-screen bg-white dark:bg-slate-900 flex text-blue-600 justify-center items-center">Loading...</div>;
+  if (!user) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)' }}>
+        Loading...
+      </div>
+    );
+  }
 
   return (
-    <div className="bg-gray-50 dark:bg-slate-900 flex py-12 px-4 sm:px-6 lg:px-8 transition-colors duration-500">
-      <div className="max-w-3xl w-full mx-auto">
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-gray-100 dark:border-slate-700 overflow-hidden transition-all">
-          
-          {/* Header & Progress Bar */}
-          <div className="bg-blue-600 dark:bg-blue-700 p-6 text-white">
-            <h1 className="text-2xl font-bold">Loan Application</h1>
-            <p className="opacity-80">Secure & AI verified • {user.full_name}</p>
-            
-            <div className="mt-6 flex items-center justify-between relative">
-              <div className="absolute left-0 top-1/2 -mt-px w-full h-1 bg-blue-400 dark:bg-blue-800 rounded"></div>
-              {[1, 2, 3, 4].map((s) => (
-                <div key={s} className="relative z-10 flex flex-col items-center">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shadow transition-all duration-300 ${step >= s ? 'bg-white text-blue-600 scale-110' : 'bg-blue-800 text-blue-200'}`}>
-                    {s}
-                  </div>
-                  <span className={`mt-2 text-[10px] uppercase tracking-wider font-bold absolute -bottom-6 w-24 text-center ${step >= s ? 'text-white' : 'text-blue-300'}`}>
-                    {s === 1 ? 'Personal' : s === 2 ? 'Loan Detail' : s === 3 ? 'KYC' : 'Confirm'}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div className="mb-6"></div>
-          </div>
+    <div className="apply-page">
+      {/* ── Progress Header ──────────────── */}
+      <div className="apply-header">
+        <div>
+          <h1 className="apply-header__title">Loan Application</h1>
+          <p className="apply-header__subtitle">SECURE & AI-VERIFIED • {user.full_name?.toUpperCase()}</p>
+        </div>
 
-          <div className="p-8">
-            {error && (
-              <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 text-red-700 dark:text-red-400 rounded shadow-sm transition-all animate-in fade-in slide-in-from-top-2">
-                <p className="font-medium text-sm">Error</p>
-                <p className="text-xs opacity-90">{error}</p>
-              </div>
-            )}
-
-            {/* STEP 1: Personal Details */}
-            {step === 1 && (
-              <form onSubmit={() => setStep(2)} className="space-y-6 animate-in fade-in">
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white border-b dark:border-slate-700 pb-2 mb-6">Personal Details</h3>
-                  <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1 ml-1">Full Name</label>
-                      <input type="text" value={user.full_name} disabled className="mt-1 block w-full rounded-lg border-transparent bg-gray-100 dark:bg-slate-900 text-gray-500 dark:text-slate-500 shadow-inner sm:text-sm px-4 py-2.5" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1 ml-1">Email Address</label>
-                      <input type="email" value={user.email} disabled className="mt-1 block w-full rounded-lg border-transparent bg-gray-100 dark:bg-slate-900 text-gray-500 dark:text-slate-500 shadow-inner sm:text-sm px-4 py-2.5" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1 ml-1">Mobile Number</label>
-                      <input type="text" value={user.mobile} disabled className="mt-1 block w-full rounded-lg border-transparent bg-gray-100 dark:bg-slate-900 text-gray-500 dark:text-slate-500 shadow-inner sm:text-sm px-4 py-2.5" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1 ml-1">Date of Birth</label>
-                      <input required type="date" name="date_of_birth" value={formData.date_of_birth} onChange={handleInputChange} className="mt-1 block w-full rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-4 py-2" />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1 ml-1">Employment Type</label>
-                      <select name="employment_type" value={formData.employment_type} onChange={handleInputChange} className="mt-1 block w-full rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white py-2.5 pl-3 pr-10 text-base focus:border-blue-500 focus:outline-none focus:ring-blue-500 sm:text-sm transition-all appearance-none cursor-pointer">
-                        <option value="SALARIED">Salaried</option>
-                        <option value="BUSINESS">Business</option>
-                        <option value="SELF_EMPLOYED">Self Employed</option>
-                        <option value="OTHER">Other</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex justify-end pt-6 border-t dark:border-slate-700">
-                  <button type="submit" className="bg-blue-600 dark:bg-blue-500 text-white px-10 py-3 rounded-xl font-bold hover:bg-blue-700 dark:hover:bg-blue-600 shadow-lg shadow-blue-500/30 transition-all active:scale-95">
-                    Next Step
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* STEP 2: Loan Details */}
-            {step === 2 && (
-              <form onSubmit={handleSubmitStep2} className="space-y-8 animate-in fade-in slide-in-from-right-4 transition-all duration-300">
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white border-b dark:border-slate-700 pb-2 mb-8">Loan Requirements</h3>
-                  
-                  <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                    
-                    {/* Amount & Tenure Inputs */}
-                    <div className="sm:col-span-2 space-y-12">
-                      
-                      {/* Loan Amount */}
-                      <div>
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 ml-1">How much do you need?</label>
-                          <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">₹</span>
-                            <input 
-                              type="number" 
-                              name="loan_amount"
-                              min="50000" 
-                              max="10000000"
-                              value={formData.loan_amount}
-                              onChange={handleInputChange}
-                              className="pl-8 pr-4 py-2.5 w-full sm:w-56 text-xl font-bold text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/20 border-transparent rounded-xl focus:ring-2 focus:ring-blue-500 text-right shadow-inner"
-                            />
-                          </div>
-                        </div>
-                        <input 
-                          type="range" 
-                          name="loan_amount" 
-                          min="50000" 
-                          max="10000000" 
-                          step="10000" 
-                          value={formData.loan_amount} 
-                          onChange={handleInputChange} 
-                          className="w-full h-2 bg-gray-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-600 transition-all" 
-                        />
-                        <div className="flex justify-between text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-slate-500 mt-2 ml-1">
-                          <span>₹50,000</span>
-                          <span>₹1,00,00,000 (1 Cr)</span>
-                        </div>
-                      </div>
-
-                      {/* Tenure */}
-                      <div>
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 ml-1">For how long? (Months)</label>
-                          <div className="relative">
-                            <input 
-                              type="number" 
-                              name="tenure_months"
-                              min="6" 
-                              max="120"
-                              value={formData.tenure_months}
-                              onChange={handleInputChange}
-                              className="pr-12 pl-4 py-2.5 w-full sm:w-40 text-xl font-bold text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/20 border-transparent rounded-xl focus:ring-2 focus:ring-blue-500 text-right shadow-inner"
-                            />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 dark:text-blue-600 text-[10px] font-bold">MO</span>
-                          </div>
-                        </div>
-                        <input 
-                          type="range" 
-                          name="tenure_months" 
-                          min="6" 
-                          max="120" 
-                          step="6" 
-                          value={formData.tenure_months} 
-                          onChange={handleInputChange} 
-                          className="w-full h-2 bg-gray-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-600 transition-all" 
-                        />
-                        <div className="flex justify-between text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-slate-500 mt-2 ml-1">
-                          <span>6 Months</span>
-                          <span>120 Months (10 Years)</span>
-                        </div>
-                      </div>
-
-                    </div>
-
-                    {/* EMI Estimator Card */}
-                    <div className="sm:col-span-2 bg-blue-600 dark:bg-blue-700 rounded-2xl p-8 flex flex-col sm:flex-row items-center justify-between shadow-xl shadow-blue-500/20">
-                      <div>
-                        <h4 className="text-sm font-bold text-blue-100 uppercase tracking-widest">Estimated Monthly EMI</h4>
-                        <p className="text-xs text-blue-200/60 mt-1 italic">Based on ~15% p.a. standard rate</p>
-                      </div>
-                      <div className="text-4xl font-black tracking-tight text-white mt-4 sm:mt-0">
-                        ₹{calculateEstimateEMI().toLocaleString('en-IN')}
-                      </div>
-                    </div>
-
-                    {/* Financials & Purpose */}
-                    <div className="pt-4 sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1 ml-1">Monthly Income (₹)</label>
-                        <input required type="number" name="monthly_income" placeholder="50000" min="15000" value={formData.monthly_income} onChange={handleInputChange} className="mt-1 block w-full rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-4 py-2.5" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1 ml-1">Existing EMIs (₹) <span className="opacity-50 font-normal italic">Optional</span></label>
-                        <input type="number" name="existing_emi" min="0" value={formData.existing_emi} onChange={handleInputChange} className="mt-1 block w-full rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-4 py-2.5" />
-                      </div>
-                      <div className="sm:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1 ml-1">Loan Purpose</label>
-                        <select name="purpose" value={formData.purpose} onChange={handleInputChange} className="mt-1 block w-full rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-white py-2.5 pl-3 pr-10 text-base focus:border-blue-500 focus:outline-none focus:ring-blue-500 sm:text-sm appearance-none cursor-pointer">
-                          <option value="Medical">Medical Emergency</option>
-                          <option value="Education">Education</option>
-                          <option value="Wedding">Wedding</option>
-                          <option value="Home Renovation">Home Renovation</option>
-                          <option value="Travel">Travel</option>
-                          <option value="Other">Other</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-between pt-8 border-t dark:border-slate-700">
-                  <button type="button" onClick={() => setStep(1)} className="text-gray-600 dark:text-slate-400 bg-gray-100 dark:bg-slate-900 hover:bg-gray-200 dark:hover:bg-slate-800 px-8 py-3 rounded-xl font-bold transition-all">
-                    Back
-                  </button>
-                  <button type="submit" disabled={loading} className="bg-blue-600 dark:bg-blue-500 text-white px-10 py-3 rounded-xl font-bold hover:bg-blue-700 dark:hover:bg-blue-600 shadow-lg shadow-blue-500/30 disabled:opacity-70 transition-all flex items-center active:scale-95">
-                    {loading ? (
-                      <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-3" /> Processing...</>
-                    ) : 'Continue to KYC'}
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* STEP 3: KYC Upload */}
-            {step === 3 && (
-              <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white border-b dark:border-slate-700 pb-2 mb-4">Identity Verification</h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-8 italic">
-                    Our AI-vision system will instantly verify your identity documents. Please ensure clear, well-lit images.
-                  </p>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
-                    <KYCUpload 
-                      label="Upload PAN Card" 
-                      onFileSelect={(file) => setPanFile(file)} 
-                    />
-                    
-                    <KYCUpload 
-                      label="Upload Aadhaar Card" 
-                      onFileSelect={(file) => setAadhaarFile(file)} 
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-between pt-8 border-t dark:border-slate-700">
-                  <button type="button" disabled={loading} onClick={() => setStep(2)} className="text-gray-600 dark:text-slate-400 bg-gray-100 dark:bg-slate-900 hover:bg-gray-200 dark:hover:bg-slate-800 px-8 py-3 rounded-xl font-bold transition-all disabled:opacity-50">
-                    Back
-                  </button>
-                  <button 
-                    onClick={handleSubmitKYC} 
-                    disabled={loading || !panFile || !aadhaarFile} 
-                    className="bg-blue-600 dark:bg-blue-500 text-white px-10 py-3 rounded-xl font-bold hover:bg-blue-700 dark:hover:bg-blue-600 shadow-lg shadow-blue-500/30 disabled:bg-gray-400 dark:disabled:bg-slate-700 transition-all active:scale-95"
-                  >
-                    {loading ? (
-                      <div className="flex items-center">
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-3" />
-                        AI Verifying...
-                      </div>
-                    ) : 'Submit for Verification'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 4: Confirmation */}
-            {step === 4 && (
-              <div className="text-center py-10 animate-in zoom-in fade-in duration-700">
-                <div className="mx-auto flex items-center justify-center h-24 w-24 rounded-full bg-green-100 dark:bg-green-900/30 mb-8 shadow-inner">
-                  <svg className="h-12 w-12 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                <h2 className="text-3xl font-black text-gray-900 dark:text-white mb-2 tracking-tight">Application Received!</h2>
-                <p className="text-lg text-gray-600 dark:text-gray-400 max-w-md mx-auto mb-10">
-                  Success! Your documents are being processed by our underwriting engine.
-                </p>
-
-                <div className="bg-gray-50 dark:bg-slate-900 border border-gray-100 dark:border-slate-700 rounded-2xl p-8 max-w-sm mx-auto mb-10 shadow-inner text-left space-y-5">
-                  <div className="flex justify-between items-center border-b dark:border-slate-800 pb-4">
-                    <span className="text-gray-500 dark:text-slate-500 font-bold text-[10px] uppercase tracking-widest">Loan Reference</span>
-                    <span className="font-extrabold font-mono text-blue-900 dark:text-blue-400">{loanData?.loan_number}</span>
-                  </div>
-                  <div className="flex justify-between items-center pb-2">
-                    <span className="text-gray-500 dark:text-slate-500 font-bold text-[10px] uppercase tracking-widest">Verification Status</span>
-                    {kycResult && <LoanStatusBadge status={kycResult.verdict === 'PASS' ? 'KYC_VERIFIED' : 'KYC_PENDING'} />}
-                  </div>
-                  {kycResult?.remarks && (
-                    <div className="pt-2">
-                      <span className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-tighter">AI Analysis Remarks</span>
-                      <p className="text-xs text-gray-600 dark:text-slate-400 italic border-l-4 pl-3 border-gray-200 dark:border-slate-800 leading-relaxed font-medium">"{kycResult.remarks}"</p>
-                    </div>
+        <div className="apply-steps">
+          {STEPS.map((label, i) => {
+            const stepNum = i + 1;
+            const isCompleted = step > stepNum;
+            const isCurrent = step === stepNum;
+            return (
+              <div key={label} className="apply-steps__item">
+                {i > 0 && (
+                  <div className={`apply-steps__line ${isCompleted ? 'apply-steps__line--done' : ''}`} />
+                )}
+                <div className={`apply-steps__circle ${isCurrent ? 'apply-steps__circle--current' : ''} ${isCompleted ? 'apply-steps__circle--done' : ''}`}>
+                  {isCompleted ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                  ) : (
+                    stepNum
                   )}
                 </div>
-
-                <div className="space-y-6">
-                  <p className="text-xs text-gray-400 dark:text-slate-500 font-medium">Our underwriting engine will process this momentarily.</p>
-                  <button 
-                    onClick={() => router.push('/dashboard')} 
-                    className="w-full sm:w-auto bg-blue-600 dark:bg-blue-500 text-white px-12 py-4 rounded-xl font-black text-lg hover:bg-blue-700 dark:hover:bg-blue-600 shadow-2xl shadow-blue-500/40 transition-all transform hover:-translate-y-1 active:translate-y-0"
-                  >
-                    Go to Dashboard
-                  </button>
-                </div>
+                <span className={`apply-steps__label ${isCurrent || isCompleted ? 'apply-steps__label--active' : ''}`}>
+                  {label}
+                </span>
               </div>
-            )}
-
-          </div>
+            );
+          })}
         </div>
       </div>
+
+      {/* ── Error Alert ──────────────────── */}
+      {error && (
+        <div className="apply-error animate-card-entrance">
+          {error}
+        </div>
+      )}
+
+      {/* ── STEP 1: Personal Details ─────── */}
+      {step === 1 && (
+        <div className="animate-card-entrance">
+          <div className="apply-section-heading">
+            <h2>Personal Details</h2>
+            <div className="apply-section-heading__rule" />
+          </div>
+
+          <form onSubmit={(e) => { e.preventDefault(); setStep(2); }}>
+            <div className="apply-grid-2">
+              <Input label="Full Name" value={user.full_name} disabled />
+              <Input label="Email Address" value={user.email} disabled />
+              <Input label="Mobile Number" value={user.mobile} addon="+91" disabled />
+              <div className="apply-field">
+                <label className="apply-field__label">DATE OF BIRTH</label>
+                <input
+                  required
+                  type="date"
+                  name="date_of_birth"
+                  value={formData.date_of_birth}
+                  onChange={handleInputChange}
+                  className="apply-field__date"
+                />
+              </div>
+            </div>
+
+            <div className="apply-field" style={{ marginTop: 'var(--space-4)' }}>
+              <label className="apply-field__label">EMPLOYMENT TYPE</label>
+              <select
+                name="employment_type"
+                value={formData.employment_type}
+                onChange={handleInputChange}
+                className="apply-field__select"
+              >
+                <option value="SALARIED">Salaried</option>
+                <option value="BUSINESS">Business</option>
+                <option value="SELF_EMPLOYED">Self Employed</option>
+                <option value="OTHER">Other</option>
+              </select>
+            </div>
+
+            <div className="apply-actions">
+              <div />
+              <Button type="submit" size="lg">Next Step →</Button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ── STEP 2: Loan Requirements ────── */}
+      {step === 2 && (
+        <div className="animate-card-entrance">
+          <div className="apply-section-heading">
+            <h2>Loan Requirements</h2>
+            <div className="apply-section-heading__rule" />
+          </div>
+
+          <form onSubmit={handleSubmitStep2}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-8)' }}>
+              <LoanSlider
+                label="HOW MUCH DO YOU NEED?"
+                min={50000}
+                max={10000000}
+                step={10000}
+                value={formData.loan_amount}
+                onChange={(v) => setFormData((p) => ({ ...p, loan_amount: v }))}
+                formatValue={(v) => `₹${v.toLocaleString('en-IN')}`}
+                formatMin="₹50,000"
+                formatMax="₹1 Cr"
+              />
+
+              <LoanSlider
+                label="FOR HOW LONG?"
+                min={6}
+                max={120}
+                step={6}
+                value={formData.tenure_months}
+                onChange={(v) => setFormData((p) => ({ ...p, tenure_months: v }))}
+                formatValue={(v) => `${v}`}
+                suffix="MO"
+                formatMin="6 Months"
+                formatMax="120 Months"
+              />
+
+              {/* EMI Preview Card */}
+              <div className="emi-preview">
+                <div className="emi-preview__info">
+                  <span className="emi-preview__label">ESTIMATED MONTHLY EMI</span>
+                  <p className="emi-preview__hint">Based on ~15% p.a. standard rate</p>
+                </div>
+                <div className="emi-preview__amount">
+                  ₹{calculateEstimateEMI().toLocaleString('en-IN')}
+                </div>
+              </div>
+
+              <div className="apply-grid-2">
+                <div className="apply-field">
+                  <label className="apply-field__label">MONTHLY INCOME (₹)</label>
+                  <input
+                    required
+                    type="number"
+                    name="monthly_income"
+                    min={15000}
+                    value={formData.monthly_income}
+                    onChange={handleInputChange}
+                    className="apply-field__date"
+                  />
+                </div>
+                <div className="apply-field">
+                  <label className="apply-field__label">EXISTING EMIs (₹)</label>
+                  <input
+                    type="number"
+                    name="existing_emi"
+                    min={0}
+                    value={formData.existing_emi}
+                    onChange={handleInputChange}
+                    className="apply-field__date"
+                  />
+                </div>
+              </div>
+
+              <div className="apply-field">
+                <label className="apply-field__label">LOAN PURPOSE</label>
+                <select
+                  name="purpose"
+                  value={formData.purpose}
+                  onChange={handleInputChange}
+                  className="apply-field__select"
+                >
+                  <option value="Medical">Medical Emergency</option>
+                  <option value="Education">Education</option>
+                  <option value="Wedding">Wedding</option>
+                  <option value="Home Renovation">Home Renovation</option>
+                  <option value="Travel">Travel</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="apply-actions">
+              <Button type="button" variant="secondary" size="lg" onClick={() => setStep(1)}>← Back</Button>
+              <Button type="submit" size="lg" loading={loading}>Continue to KYC →</Button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ── STEP 3: KYC Upload ───────────── */}
+      {step === 3 && (
+        <div className="animate-card-entrance">
+          <div className="apply-section-heading">
+            <h2>Identity Verification</h2>
+            <div className="apply-section-heading__rule" />
+          </div>
+
+          <p className="apply-kyc-intro">
+            Our AI-vision system verifies your documents instantly.
+          </p>
+
+          <div className="apply-grid-2" style={{ marginTop: 'var(--space-6)' }}>
+            <KYCUpload label="Upload PAN Card" file={panFile} onFileSelect={setPanFile} />
+            <KYCUpload label="Upload Aadhaar Card" file={aadhaarFile} onFileSelect={setAadhaarFile} />
+          </div>
+
+          <div style={{ marginTop: 'var(--space-6)' }}>
+            <Button
+              size="lg"
+              fullWidth
+              loading={loading}
+              disabled={!panFile || !aadhaarFile}
+              onClick={handleSubmitKYC}
+            >
+              Submit for AI Verification
+            </Button>
+          </div>
+
+          <p className="apply-trust">
+            🔒 256-bit encrypted · RBI compliant · Documents not shared
+          </p>
+
+          <div className="apply-actions" style={{ marginTop: 'var(--space-4)' }}>
+            <Button type="button" variant="ghost" onClick={() => setStep(2)}>← Back</Button>
+            <div />
+          </div>
+        </div>
+      )}
+
+      {/* ── STEP 4: Confirmation ─────────── */}
+      {step === 4 && (
+        <div className="apply-confirm animate-card-entrance">
+          <div className="apply-confirm__check">
+            <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+              <circle cx="32" cy="32" r="30" stroke="var(--color-success)" strokeWidth="2" opacity="0.3" />
+              <path
+                d="M20 33L28 41L44 23"
+                stroke="var(--color-success)"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeDasharray="100"
+                strokeDashoffset="0"
+                style={{ animation: 'checkDraw 800ms ease-out forwards' }}
+              />
+            </svg>
+          </div>
+
+          <h2 className="apply-confirm__title">Application Received!</h2>
+          <p className="apply-confirm__subtitle">
+            Your documents are being verified by our AI engine.
+          </p>
+
+          <Card variant="bordered" className="apply-confirm__card">
+            <div className="apply-confirm__row">
+              <span className="apply-confirm__label">LOAN REFERENCE</span>
+              <span className="apply-confirm__value apply-confirm__value--mono">{loanData?.loan_number}</span>
+            </div>
+            <div className="apply-confirm__row-divider" />
+            <div className="apply-confirm__row">
+              <span className="apply-confirm__label">VERIFICATION STATUS</span>
+              <Badge variant={kycResult?.verdict === 'PASS' ? 'success' : 'warning'}>
+                {kycResult?.verdict === 'PASS' ? 'KYC Verified' : 'KYC Pending'}
+              </Badge>
+            </div>
+            {kycResult?.remarks && (
+              <>
+                <div className="apply-confirm__row-divider" />
+                <div className="apply-confirm__row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-2)' }}>
+                  <span className="apply-confirm__label">AI REMARKS</span>
+                  <p className="apply-confirm__remarks">&ldquo;{kycResult.remarks}&rdquo;</p>
+                </div>
+              </>
+            )}
+          </Card>
+
+          <Button size="lg" onClick={() => router.push('/dashboard')}>
+            Go to Dashboard →
+          </Button>
+        </div>
+      )}
+
+      <style jsx>{`
+        .apply-page {
+          max-width: 800px;
+          margin: 0 auto;
+        }
+
+        /* ── Header ──────────────────────── */
+        .apply-header {
+          margin-bottom: var(--space-8);
+        }
+        .apply-header__title {
+          font-family: var(--font-display);
+          font-size: var(--text-2xl);
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+        .apply-header__subtitle {
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          margin-top: var(--space-1);
+        }
+
+        /* ── Steps ───────────────────────── */
+        .apply-steps {
+          display: flex;
+          align-items: center;
+          margin-top: var(--space-6);
+          gap: 0;
+        }
+        .apply-steps__item {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          position: relative;
+          flex: 1;
+        }
+        .apply-steps__line {
+          position: absolute;
+          top: 14px;
+          right: 50%;
+          width: 100%;
+          height: 1px;
+          background: var(--surface-border);
+          z-index: 0;
+        }
+        .apply-steps__line--done {
+          background: var(--color-success);
+        }
+        .apply-steps__circle {
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: var(--text-xs);
+          font-weight: 700;
+          border: 1px solid var(--surface-border);
+          color: var(--text-tertiary);
+          background: var(--surface-base);
+          position: relative;
+          z-index: 1;
+          transition: all var(--transition-base);
+        }
+        .apply-steps__circle--current {
+          background: var(--accent-500);
+          border-color: var(--accent-500);
+          color: var(--neutral-0);
+        }
+        .apply-steps__circle--done {
+          background: var(--color-success);
+          border-color: var(--color-success);
+          color: var(--neutral-0);
+        }
+        .apply-steps__label {
+          font-size: var(--text-xs);
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: var(--text-tertiary);
+          margin-top: var(--space-2);
+          font-weight: 500;
+        }
+        .apply-steps__label--active {
+          color: var(--text-primary);
+        }
+
+        /* ── Section Heading ─────────────── */
+        .apply-section-heading {
+          margin-bottom: var(--space-6);
+        }
+        .apply-section-heading h2 {
+          font-size: var(--text-xl);
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+        .apply-section-heading__rule {
+          height: 1px;
+          background: var(--surface-border);
+          margin-top: var(--space-3);
+        }
+
+        /* ── Grid ────────────────────────── */
+        .apply-grid-2 {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: var(--space-4);
+        }
+        @media (max-width: 640px) {
+          .apply-grid-2 { grid-template-columns: 1fr; }
+        }
+
+        /* ── Native field styling ────────── */
+        .apply-field {
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-2);
+        }
+        .apply-field__label {
+          font-size: var(--text-xs);
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.02em;
+          color: var(--text-tertiary);
+        }
+        .apply-field__date,
+        .apply-field__select {
+          width: 100%;
+          padding: 14px 16px;
+          background: var(--surface-sunken);
+          border: 1px solid var(--surface-border);
+          border-radius: var(--radius-md);
+          color: var(--text-primary);
+          font-family: var(--font-body);
+          font-size: var(--text-base);
+          outline: none;
+          transition: all var(--transition-base);
+          appearance: none;
+        }
+        .apply-field__date:focus,
+        .apply-field__select:focus {
+          border-color: var(--accent-400);
+          box-shadow: 0 0 0 3px rgba(124,58,237,0.15);
+        }
+        .apply-field__select {
+          cursor: pointer;
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%236B6560' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 6l3.5 4 3.5-4z'/%3E%3C/svg%3E");
+          background-repeat: no-repeat;
+          background-position: right 12px center;
+          padding-right: 36px;
+        }
+
+        /* ── EMI Preview ─────────────────── */
+        .emi-preview {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: var(--space-8);
+          background: linear-gradient(135deg, rgba(124,58,237,0.15), rgba(124,58,237,0.05));
+          border: 1px solid rgba(124,58,237,0.30);
+          border-radius: var(--radius-xl);
+          flex-wrap: wrap;
+          gap: var(--space-4);
+        }
+        .emi-preview__label {
+          font-size: var(--text-xs);
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: var(--text-secondary);
+        }
+        .emi-preview__hint {
+          font-size: var(--text-xs);
+          color: var(--text-tertiary);
+          margin-top: var(--space-1);
+        }
+        .emi-preview__amount {
+          font-family: var(--font-display);
+          font-size: var(--text-5xl);
+          font-weight: 700;
+          color: var(--text-primary);
+          letter-spacing: -0.02em;
+          transition: all var(--transition-fast);
+        }
+        @media (max-width: 640px) {
+          .emi-preview__amount { font-size: var(--text-4xl); }
+        }
+
+        /* ── Actions ─────────────────────── */
+        .apply-actions {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-top: var(--space-8);
+          padding-top: var(--space-6);
+          border-top: 1px solid var(--surface-border);
+        }
+
+        /* ── KYC Intro ───────────────────── */
+        .apply-kyc-intro {
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+          text-align: center;
+        }
+        .apply-trust {
+          text-align: center;
+          font-size: var(--text-xs);
+          color: var(--text-tertiary);
+          margin-top: var(--space-4);
+          letter-spacing: 0.02em;
+        }
+
+        /* ── Confirmation ────────────────── */
+        .apply-confirm {
+          text-align: center;
+          padding: var(--space-8) 0;
+        }
+        .apply-confirm__check {
+          margin-bottom: var(--space-6);
+        }
+        .apply-confirm__title {
+          font-family: var(--font-display);
+          font-size: var(--text-3xl);
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+        .apply-confirm__subtitle {
+          color: var(--text-secondary);
+          margin-top: var(--space-2);
+          margin-bottom: var(--space-8);
+        }
+        .apply-confirm__card {
+          max-width: 400px;
+          margin: 0 auto var(--space-8);
+          text-align: left;
+        }
+        .apply-confirm__row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: var(--space-3) 0;
+        }
+        .apply-confirm__row-divider {
+          border-bottom: 1px dotted var(--surface-border);
+        }
+        .apply-confirm__label {
+          font-size: var(--text-xs);
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: var(--text-tertiary);
+        }
+        .apply-confirm__value {
+          color: var(--text-primary);
+          font-weight: 600;
+        }
+        .apply-confirm__value--mono {
+          font-family: var(--font-mono);
+          color: var(--text-accent);
+        }
+        .apply-confirm__remarks {
+          font-size: var(--text-sm);
+          color: var(--text-tertiary);
+          font-style: italic;
+          line-height: 1.6;
+        }
+
+        /* ── Error ───────────────────────── */
+        .apply-error {
+          padding: var(--space-3) var(--space-4);
+          background: rgba(239,68,68,0.08);
+          border: 1px solid rgba(239,68,68,0.2);
+          border-radius: var(--radius-md);
+          color: var(--color-error);
+          font-size: var(--text-sm);
+          margin-bottom: var(--space-6);
+        }
+      `}</style>
     </div>
   );
 }
