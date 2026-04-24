@@ -1,21 +1,45 @@
 # NexLoan 🚀
 
-NexLoan is a state-of-the-art, **AI-first personal loan origination platform** built for speed, compliance, and transparency. It leverages modern web technologies and local AI processing to verify identity, underwrite loans, and provide a seamless conversational interface for users.
+NexLoan is a state-of-the-art, **AI-first personal loan origination platform** built for speed, compliance, and extreme transparency. It bridges the gap between complex document verification and seamless user experience, utilizing a multi-layered AI pipeline to automate traditionally manual financial processes.
 
 ---
 
-## 🌟 Key Features
+## 🌟 Comprehensive Feature Set
 
-- **OTP-Based Authentication**: Passwordless login system.
-- **Local AI KYC Engine**: PAN and Aadhaar card verification running locally via Tesseract OCR—fast, private, and deterministic. No more expensive external cloud vision APIs for basic layout text extractions.
-- **Identity Fraud Protection**: Fuzzy matching between applicant submitted names and physically OCR-extracted names from documents.
-- **RBI Digital Lending Compliance**:
-  - Automatically generates **Key Fact Statement (KFS)** prior to loan disbursement.
-  - Implements a strict **3-day Cooling-off Period** for loan cancellations without penalties.
-  - Transparent **DLA & LSP Disclosures** to users.
-  - Strong **Data Privacy** (e.g., auto-masking the first 8 digits of Aadhaar).
-- **Intelligent Underwriting Engine**: Simulates risk assessment utilizing custom Debt-to-Income (DTI) and credit score algorithms to determine approval amounts.
-- **Conversational AI Chatbot**: Built-in Groq LLM chatbot for continuous customer support, intelligently accessing user loan context with an extremely strict English-only enforcement policy.
+### 🧠 Triple-Layer AI KYC Pipeline
+Our document verification doesn't just "read" text; it understands it.
+- **Layer 1: Groq Llama-3.2 Vision**: High-speed visual context extraction.
+- **Layer 2: LayoutLM-DocVQA**: Document understanding via Hugging Face that "finds" fields based on visual layout (e.g., Aadhaar/PAN formats), solving the "garbage text" issues of standard OCR.
+- **Layer 3: NLP Reconciliation**: BERT-based NER and fuzzy matching to detect identity fraud (mismatching names/IDs).
+- **Fallback**: Local Tesseract OCR for data redundancy.
+
+### 📑 Narrative-First Admin Dashboard & Workspace
+We removed technical clutter. Admins no longer look at raw confidence scores; they read **"AI Auditor Narrative Reports"**—plain English explanations of system decisions (e.g., *"🚩 Identity Mismatch: Name on card is MAYUR, but applicant is SAHIL."*).
+
+### 📐 Precision Underwriting Engine
+Deterministic financial modeling including:
+- **EMI Amortization**: Reducing balance lending calculations.
+- **DTI Ratio**: Automated Debt-to-Income evaluation.
+- **Risk-Based Pricing**: Dynamic interest rate matrices based on Credit Score bands.
+
+### 🚦 Advanced Borrower Experience
+- **Loan Readiness Score**: A 60-second pre-qualification tool without hard credit checks.
+- **Application Tracking**: Real-time status tracking via a dynamic visual timeline.
+- **Interactive Dashboard**: View EMI schedules, financial health metrics, and trigger "EMI Pauses" with automated restructuring.
+- **Conversational AI Agent**: Persistent chat assistant that remembers past queries and context to guide borrowers.
+- **Co-Applicant Workflow**: Invite a spouse or parent via SMS/Email to boost loan eligibility.
+
+### 🔐 Access Control (RBAC)
+Robust security separating Borrowers, Loan Officers, Admins, and Super Admins. Secure JWT-based session management integrated deeply into the frontend routes and backend dependencies.
+
+### 💳 Payment Integration Notice
+> **Note on Payment Gateways (Razorpay/Stripe):** 
+> While the application architecture fully supports EMI repayments and dynamic schedule updates, the direct integration of a live Payment Gateway (like Razorpay) was omitted from this development phase. This is because acquiring functional sandbox credentials requires a registered business PAN/GST and verified KYC, which is outside the scope of this local development sandbox. All payment flows in the UI currently simulate a successful transaction to demonstrate the state updates (updating the EMI schedule, marking installments as PAID, etc.).
+
+### 🛡️ Technical Excellence & Compliance
+- **Auth**: Passwordless Email OTP powered by the **Brevo REST API** for 100% deliverability.
+- **Security**: Redis-backed session management and TTL-based OTP security.
+- **RBI Ready**: Immutable Audit Trails, Aadhaar masking (masking first 8 digits), and Cooling-off periods.
 
 ---
 
@@ -24,9 +48,9 @@ NexLoan is a state-of-the-art, **AI-first personal loan origination platform** b
 ```mermaid
 graph TD
     %% Frontend Layer
-    subgraph Frontend [Next.js Client]
+    subgraph Frontend [Next.js 15 Client]
         UI[Tailwind UI / Dashboard]
-        Chat[Chatbot Widget]
+        Three[Three.js 3D Visuals]
         KYC_UI[KYC Document Upload]
     end
 
@@ -34,102 +58,97 @@ graph TD
     subgraph Backend [FastAPI Server]
         Auth[OTP/JWT Auth Service]
         AppRouter[Application & Disbursement Router]
-        BotRouter[Chatbot Session Router]
+        AdminRouter[Admin XAI Router]
     end
 
-    %% Internal Services
-    subgraph Services [Internal AI & Logic]
-        OCR[Local Tesseract OCR Engine]
-        Underwriting[Risk Underwriting Engine]
-        Groq[Groq Conversational AI]
+    %% AI Pipeline
+    subgraph AI_Engine [3-Layer AI Engine]
+        GroqV[Groq Vision Layer]
+        HF[HF LayoutLM v3 Layer]
+        NLP[BERT NER / Logic Layer]
+        OCR[Tesseract Fallback]
     end
 
     %% Storage & Caching
     subgraph Data [Storage Layer]
-        PG[(PostgreSQL)]
+        PG[(PostgreSQL - SQLAlchemy 2.0)]
         R2[(Cloudflare R2 Bucket)]
-        Redis[(Redis Cache / Sessions)]
+        Redis[(Redis Caching / OTPs)]
     end
 
     %% Flow connections
     UI -->|REST APIs| Auth
     UI -->|REST APIs| AppRouter
-    Chat -->|REST APIs| BotRouter
-    KYC_UI -->|Multipart/Form Data| AppRouter
+    UI --> AdminRouter
+    AdminRouter --> NLP
     
-    AppRouter --> OCR
-    AppRouter --> Underwriting
-    AppRouter --> PG
-    AppRouter --> R2
+    AppRouter --> AI_Engine
+    AI_Engine --> PG
+    AI_Engine --> R2
     
-    BotRouter --> Redis
-    BotRouter --> Groq
+    Auth --> Redis
 ```
 
 ---
 
 ## 🛠️ Technology Stack
 
-- **Frontend**: Next.js 14, React, Tailwind CSS, TypeScript
-- **Backend**: FastAPI, Python 3.11+, SQLAlchemy 2.0
-- **Database**: PostgreSQL (via Supabase / Local)
-- **Caching & State**: Redis
-- **File Storage**: Cloudflare R2 (S3-compatible)
-- **AI & OCR**: Groq API (Chatbot), local `Pytesseract` (KYC extraction)
+- **Frontend**: Next.js 15+, React, TypeScript, Three.js (3D CreditCoin), Tailwind CSS.
+- **Backend**: FastAPI, Python 3.12, SQLAlchemy 2.0 (Async).
+- **Messaging**: Brevo REST API (Transactional Email).
+- **AI/ML**: 
+  - Hugging Face Inference API (`impira/layoutlm-document-qa`).
+  - Groq Cloud API (Llama 3.2 Vision & Meta Llama 70B Text).
+  - Pytesseract (Local OCR).
+- **Infrastructure**: PostgreSQL, Redis, Cloudflare R2 (S3 compatibility).
 
 ---
 
-## ⚙️ How to Run the Project Locally
+## ⚙️ Development Setup
 
 ### Prerequisites
-1. **Node.js** (v18+)
-2. **Python** (v3.11+)
-3. **PostgreSQL** & **Redis** running locally (or remote URIs)
-4. **Tesseract OCR Engine** installed locally 
-   - *Windows:* Download from UB Mannheim, install to `C:\Program Files\Tesseract-OCR\tesseract.exe`
-   - *Linux:* `sudo apt-get install tesseract-ocr`
+1. **Node.js** (v20+)
+2. **Python** (v3.12+)
+3. **PostgreSQL** & **Redis** (running locally or via Docker)
+4. **Tesseract OCR** installed on system path.
 
-### 1. Database & Environment Setup
-Ensure you copy the `.env.example` to `.env` in the `backend/` folder and fill in the required keys.
+### 1. Environment Configuration
+Copy `.env.example` to `.env` in both the `frontend` and `backend` directories and fill in your API keys.
 
-```bash
-# Example .env configuration variables
-DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/nexloan
-REDIS_URL=redis://localhost:6379/0
-GROQ_API_KEY=your_groq_api_key
-JWT_SECRET=your_secret_string
-R2_ACCESS_KEY_ID=...
-```
-
-### 2. Start the Backend
-
+### 2. Backend Setup
 ```bash
 cd backend
 python -m venv venv
 # Windows: venv\Scripts\activate | Mac/Linux: source venv/bin/activate
 pip install -r requirements.txt
 
-# Start the FastAPI server on port 8000
+# Run Database Migrations
+alembic upgrade head
+
+# Start the Server
 uvicorn app.main:app --reload
 ```
 
-### 3. Start the Frontend
-
+### 3. Frontend Setup
 ```bash
 cd frontend
 npm install
 
-# Start the Next.js development server on port 3000
+# Start the Server
 npm run dev
 ```
 
-### 4. Access the Application
-Open your browser and navigate to `http://localhost:3000`.
+### 4. Bypassing Auth for Development
+During local development, you can bypass the email OTP verification. The backend accepts `123456` as a universal OTP for any email. Furthermore, the `frontend/app/layout.tsx` file contains an injected script that automatically populates a valid JWT into `localStorage`, granting immediate access to the dashboard and `LOAN_OFFICER` restricted routes.
 
 ---
 
-## 🔒 Compliance & Security Notes
+## 🔒 Compliance & Security
 
-This platform is modeled to adhere to Digital Lending guidelines required by regulatory bodies like the RBI. 
-- **Immutable Audit Trails**: Every status change (e.g. from `INQUIRY` to `CLOSED`) generates an immutable tracking record.
-- **Data Minimization & Masking**: User documents uploaded for KYC are masked (e.g., Aadhaar) prior to database insertion.
+NexLoan implements modern digital lending safeguards:
+- **Auditability**: Every status change generates an immutable record in the `AuditLog` table.
+- **Privacy**: Aadhaar numbers are masked ($XXXX-XXXX-1234$) before storage.
+- **Reliability**: Fail-safe AI logic ensures that if high-confidence extraction fails, the application is routed for manual human verification.
+
+---
+*NexLoan — Powered by Theoremlabs*

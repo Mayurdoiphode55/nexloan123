@@ -16,13 +16,15 @@ from app.config import settings
 from app.models.loan import Base
 
 
+# Strip any query params from DATABASE_URL that asyncpg doesn't understand
+_db_url = settings.DATABASE_URL.split("?")[0]
+
 engine = create_async_engine(
-    settings.DATABASE_URL,
+    _db_url,
     echo=settings.DEBUG,
     poolclass=NullPool,
     connect_args={
         "statement_cache_size": 0,
-        "prepared_statement_cache_size": 0,
     }
 )
 

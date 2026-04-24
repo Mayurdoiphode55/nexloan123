@@ -11,8 +11,20 @@ import difflib
 import platform
 from typing import Dict, Any
 
-from PIL import Image
+from PIL import Image, ImageOps, ImageEnhance
 import pytesseract
+
+def _preprocess_image(image: Image.Image) -> Image.Image:
+    """Enhances image for better OCR accuracy."""
+    # Convert to grayscale
+    gray = image.convert("L")
+    # Rescale 2x to help with small text on ID cards
+    w, h = gray.size
+    upscaled = gray.resize((w * 2, h * 2), Image.Resampling.LANCZOS)
+    # Increase contrast
+    enhancer = ImageEnhance.Contrast(upscaled)
+    enhanced = enhancer.enhance(1.8)
+    return enhanced
 
 logger = logging.getLogger("nexloan.ocr")
 
@@ -48,21 +60,20 @@ def is_fuzzy_match(target: str, corpus: str, threshold=0.7) -> bool:
 
 def _extract_name_from_text(ocr_text: str, doc_type: str, expected_name: str) -> str | None:
     """
-    Attempts to extract the cardholder's name from raw OCR text.
-    First tries to anchor on the expected (applicant) name via fuzzy matching lines,
-    which overcomes hallucinated OCR noise and bilingual scripts automatically.
-    Falls back to layout heuristics if no good fuzzy match is found.
+    Attempts to extract the cardholder's name from raw OCR text using aggressive filtering.
     """
+    # Clean OCR text: remove non-ASCII noise (common in Tesseract's Marathi garbling)
+    ocr_text = "".join(c for c in ocr_text if ord(c) < 128)
+    
     lines = [line.strip() for line in ocr_text.split('\n') if len(line.strip()) > 3]
     
-    # 1. Targeted Anchor Approach
+    # 1. Targeted Anchor Approach (Look for similarity to applicant name)
     expected_lower = expected_name.lower().strip()
     best_match_line = None
     best_ratio = 0.0
     
     for line in lines:
         line_lower = line.lower()
-        # Direct substring: if the full expected name is somewhere in this line
         if expected_lower in line_lower:
             return line
             
@@ -71,44 +82,52 @@ def _extract_name_from_text(ocr_text: str, doc_type: str, expected_name: str) ->
             best_ratio = ratio
             best_match_line = line
             
-    # If we found a strongly aligned line (e.g. "MAYUR NANASAHEB DOIPHODE Dee emer" vs "Mayur Nanasaheb Doiphode")
     if best_ratio > 0.65 and best_match_line:
         return best_match_line
 
-    # 2. Heuristic Fallback Approach
+    # 2. Heuristic Fallback — Domain-Aware Filtering
     skip_keywords = [
         'income tax', 'govt', 'government', 'india', 'department',
-        'permanent account', 'unique identification', 'uidai',
-        'date of birth', 'dob', 'father', 'signature', 'address',
-        'male', 'female', 'aadhaar', 'enrolment', 'vid:', 'download',
-        'mera aadhaar', 'my aadhaar', 'year of', 'yob'
+        'unit', 'identification', 'uidai', 'permanent', 'account',
+        'signature', 'address', 'male', 'female', 'aadhaar', 
+        'mera aadhaar', 'my aadhaar', 'year of', 'yob', 'issued:',
+        'नाम', 'पिता', 'जन्म', 'card'
     ]
+    
+    pan_regex = r'[A-Z]{5}[0-9]{4}[A-Z]{1}'
+    aadhaar_regex = r'(\d{4})\s?(\d{4})\s?(\d{4})'
     
     candidates = []
     
     for line in lines:
-        line_lower = line.lower()
+        line_clean = line.strip()
+        line_lower = line_clean.lower()
         
-        # Skip header/govt/metadata lines
+        # --- Aggressive Skips ---
         if any(kw in line_lower for kw in skip_keywords):
             continue
         
-        # Skip lines with numbers (dates, PAN numbers, Aadhaar numbers, etc.)
-        if re.search(r'\d{2,}', line):
+        # Skip if looks like a PAN number
+        if re.search(pan_regex, line_clean.upper()):
             continue
-        
-        # Skip single-word lines
-        words = line.split()
-        if len(words) < 2:
+            
+        # Skip if looks like an Aadhaar number
+        if re.search(aadhaar_regex, line_clean):
             continue
-        
-        # A name line should be mostly alphabetic characters
-        alpha_chars = sum(1 for c in line if c.isalpha() or c == ' ')
-        if alpha_chars / max(len(line), 1) > 0.70:
-            candidates.append(line)
+            
+        # Skip if high digit density
+        digits = sum(1 for c in line_clean if c.isdigit())
+        if digits / max(len(line_clean), 1) > 0.20:
+            continue
+            
+        # --- Validation ---
+        alpha_chars = sum(1 for c in line_clean if c.isalpha() or c == ' ' or c == '.')
+        if alpha_chars / max(len(line_clean), 1) > 0.75:
+            # Indian names always have 2+ words and are usually 10+ chars
+            if len(line_clean.split()) >= 2 and len(line_clean) > 8:
+                candidates.append(line_clean)
     
     if candidates:
-        # Return the first candidate (most likely the cardholder name)
         return candidates[0].strip()
     
     return None
@@ -121,11 +140,13 @@ async def analyze_document_completeness(file_bytes: bytes, doc_type: str, applic
     and comparing it against the applicant's stated name.
     """
     try:
-        # Convert to grayscale for higher Tesseract accuracy
-        image = Image.open(io.BytesIO(file_bytes)).convert("L")
-        extracted_text = pytesseract.image_to_string(image)
-        logger.info(f"📄 Local OCR extracted {len(extracted_text)} chars from {doc_type}.")
-        logger.info(f"📄 OCR Raw Text Preview: {extracted_text[:200]}...")
+        # Process image with enhancement
+        image = Image.open(io.BytesIO(file_bytes))
+        preprocessed = _preprocess_image(image)
+        
+        extracted_text = pytesseract.image_to_string(preprocessed)
+        logger.info(f"📄 Local OCR (Hardened) extracted {len(extracted_text)} chars from {doc_type}.")
+        logger.info(f"📄 OCR Raw Text Preview: {extracted_text[:300]}...")
         
         doc_type_upper = doc_type.upper()
         

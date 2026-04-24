@@ -49,6 +49,7 @@ class KYCQueueItem(BaseModel):
     # AI verdict
     ai_verdict: str | None
     ai_remarks: str | None
+    ai_raw_response: dict | None
 
 
 class AdminActionResponse(BaseModel):
@@ -167,6 +168,7 @@ async def get_kyc_queue(db: AsyncSession = Depends(get_db)):
                 aadhaar_photo_present=kyc.aadhaar_photo_present if kyc else None,
                 ai_verdict=kyc.ai_verdict if kyc else None,
                 ai_remarks=kyc.ai_remarks if kyc else None,
+                ai_raw_response=kyc.ai_raw_response if kyc else None,
             )
         )
 
@@ -284,3 +286,161 @@ async def reject_kyc(loan_id: str, db: AsyncSession = Depends(get_db)):
         new_status=LoanStatus.REJECTED.value,
         message=f"KYC rejected for {loan.loan_number}. Loan application has been closed.",
     )
+
+
+# ─── ADMIN METRICS ────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/metrics",
+    summary="Dashboard metrics — total loans, approval rate, revenue, daily volume",
+)
+async def get_admin_metrics(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    NOTE: No auth guard for prototype. Add role-based auth before production.
+    Returns aggregate metrics for the admin dashboard.
+    """
+    from sqlalchemy import func, cast, Date
+    from datetime import timedelta
+
+    # Total loans
+    total_stmt = select(func.count(Loan.id))
+    total_result = await db.execute(total_stmt)
+    total_loans = total_result.scalar() or 0
+
+    # Approved count
+    approved_stmt = select(func.count(Loan.id)).where(
+        Loan.status.in_([LoanStatus.APPROVED, LoanStatus.DISBURSED, LoanStatus.ACTIVE, LoanStatus.CLOSED, LoanStatus.PRE_CLOSED])
+    )
+    approved_result = await db.execute(approved_stmt)
+    approved_count = approved_result.scalar() or 0
+
+    approval_rate = round((approved_count / total_loans * 100), 1) if total_loans > 0 else 0
+
+    # Total revenue (sum of total_paid across all loans)
+    revenue_stmt = select(func.sum(Loan.total_paid))
+    revenue_result = await db.execute(revenue_stmt)
+    total_revenue = round(revenue_result.scalar() or 0, 2)
+
+    # Active loans
+    active_stmt = select(func.count(Loan.id)).where(Loan.status == LoanStatus.ACTIVE)
+    active_result = await db.execute(active_stmt)
+    active_loans = active_result.scalar() or 0
+
+    # Status breakdown
+    all_loans_stmt = select(Loan.status, func.count(Loan.id)).group_by(Loan.status)
+    all_loans_result = await db.execute(all_loans_stmt)
+    status_breakdown = {row[0].value: row[1] for row in all_loans_result.all()}
+
+    # Average credit score of approved loans
+    avg_score_stmt = select(func.avg(Loan.credit_score)).where(
+        Loan.status.in_([LoanStatus.APPROVED, LoanStatus.ACTIVE, LoanStatus.DISBURSED])
+    )
+    avg_score_result = await db.execute(avg_score_stmt)
+    avg_credit_score = round(avg_score_result.scalar() or 0, 0)
+
+    # Daily loan volume (last 7 days)
+    daily_volume = []
+    for i in range(6, -1, -1):
+        day = datetime.utcnow().date() - timedelta(days=i)
+        day_stmt = select(func.count(Loan.id)).where(
+            cast(Loan.created_at, Date) == day
+        )
+        day_result = await db.execute(day_stmt)
+        daily_volume.append({
+            "date": day.strftime("%d %b"),
+            "count": day_result.scalar() or 0,
+        })
+
+    return {
+        "total_loans": total_loans,
+        "approval_rate": approval_rate,
+        "total_revenue": total_revenue,
+        "active_loans": active_loans,
+        "status_breakdown": status_breakdown,
+        "avg_credit_score": avg_credit_score,
+        "daily_volume": daily_volume,
+    }
+
+
+# ─── REAPPLY REMINDERS ────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/reapply-reminders",
+    summary="Loans due for 90-day reapply reminder",
+)
+async def get_reapply_reminders(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    NOTE: No auth guard for prototype.
+    Returns rejected loans where reapply_reminder_date <= now.
+    """
+    stmt = select(Loan).options(
+        selectinload(Loan.user)
+    ).where(
+        Loan.status == LoanStatus.REJECTED,
+        Loan.reapply_reminder_date != None,
+        Loan.reapply_reminder_date <= datetime.utcnow(),
+    ).order_by(Loan.reapply_reminder_date.asc())
+
+    result = await db.execute(stmt)
+    loans = result.scalars().all()
+
+    reminders = []
+    for loan in loans:
+        reminders.append({
+            "loan_id": str(loan.id),
+            "loan_number": loan.loan_number,
+            "applicant_name": loan.user.full_name if loan.user else "Unknown",
+            "applicant_email": loan.user.email if loan.user else "",
+            "rejection_date": loan.updated_at.strftime("%d %b %Y") if loan.updated_at else "",
+            "reapply_date": loan.reapply_reminder_date.strftime("%d %b %Y") if loan.reapply_reminder_date else "",
+            "improvement_plan": loan.improvement_plan or "",
+        })
+
+    return reminders
+
+
+@router.post(
+    "/remind/{loan_id}",
+    summary="Manually send reapply reminder email",
+)
+async def send_reapply_reminder(
+    loan_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    NOTE: No auth guard for prototype.
+    Sends the 90-day reminder email to the rejected applicant.
+    """
+    from app.services.email_service import send_reapply_reminder_email
+
+    stmt = select(Loan).options(selectinload(Loan.user)).where(Loan.id == loan_id)
+    result = await db.execute(stmt)
+    loan = result.scalars().first()
+
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
+
+    if loan.status != LoanStatus.REJECTED:
+        raise HTTPException(status_code=400, detail="Loan is not in REJECTED status")
+
+    user = loan.user
+    if not user:
+        raise HTTPException(status_code=400, detail="No user found for this loan")
+
+    await send_reapply_reminder_email(
+        to_email=user.email,
+        name=user.full_name,
+        loan_number=loan.loan_number,
+        improvement_plan=loan.improvement_plan or "",
+    )
+
+    logger.info(f"📧 Reapply reminder sent for loan {loan.loan_number}")
+
+    return {"message": f"Reapply reminder email sent to {user.email}"}
+

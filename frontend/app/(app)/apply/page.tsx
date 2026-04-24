@@ -8,7 +8,7 @@ import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import LoanSlider from '@/components/LoanSlider';
 import KYCUpload from '@/components/KYCUpload';
-import { createInquiry, uploadKYC } from '@/lib/api';
+import { loanAPI, coApplicantAPI } from '@/lib/api';
 
 const STEPS = ['Personal', 'Loan Detail', 'KYC', 'Confirm'];
 
@@ -43,6 +43,15 @@ export default function ApplyPage() {
   const [aadhaarFile, setAadhaarFile] = useState<File | null>(null);
   const [kycResult, setKycResult] = useState<any>(null);
 
+  const [hasCoApplicant, setHasCoApplicant] = useState(false);
+  const [coApplicant, setCoApplicant] = useState({
+    full_name: '', relationship: 'SPOUSE', phone: '', monthly_income: 0, employment_type: 'SALARIED', existing_emi: 0,
+  });
+  const handleCoChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value, type } = e.target;
+    setCoApplicant(p => ({ ...p, [name]: type === 'number' ? Number(value) : value }));
+  };
+
   const calculateEstimateEMI = () => {
     const P = formData.loan_amount;
     const r = 15 / (12 * 100);
@@ -75,11 +84,24 @@ export default function ApplyPage() {
         existing_emi: formData.existing_emi,
         date_of_birth: formData.date_of_birth + "T00:00:00Z",
       };
-      const response = await createInquiry(inquiryPayload);
-      setLoanData(response);
+      const response = await loanAPI.createInquiry(inquiryPayload);
+      const loan = response.data;
+      setLoanData(loan);
+      // If co-applicant was added, submit it
+      if (hasCoApplicant && coApplicant.full_name && coApplicant.phone && coApplicant.monthly_income > 0) {
+        try {
+          await coApplicantAPI.add(loan.loan_id, { ...coApplicant, consent_given: true });
+        } catch { /* non-blocking */ }
+      }
       setStep(3);
     } catch (err: any) {
-      setError(err.response?.data?.detail || err.message || "Failed to create inquiry");
+      const detail = err.response?.data?.detail;
+      const msg = typeof detail === 'string'
+        ? detail
+        : Array.isArray(detail)
+          ? detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ')
+          : err.message || 'Failed to create inquiry';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -90,14 +112,28 @@ export default function ApplyPage() {
       setError("Please upload both PAN and Aadhaar cards.");
       return;
     }
+    if (!loanData?.loan_id) {
+      setError("Loan session lost. Please go back and resubmit your details.");
+      setStep(2);
+      return;
+    }
     setLoading(true);
     setError('');
     try {
-      const response = await uploadKYC(loanData.loan_id, panFile, aadhaarFile);
-      setKycResult(response);
+      const formData = new FormData();
+      formData.append('pan_card', panFile);
+      formData.append('aadhaar_card', aadhaarFile);
+      const response = await loanAPI.uploadKYC(loanData.loan_id, formData);
+      setKycResult(response.data);
       setStep(4);
     } catch (err: any) {
-      setError(err.response?.data?.detail || err.message || "Failed to upload KYC");
+      const detail = err.response?.data?.detail;
+      const msg = typeof detail === 'string'
+        ? detail
+        : Array.isArray(detail)
+          ? detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ')
+          : err.message || 'Failed to upload KYC';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -149,7 +185,7 @@ export default function ApplyPage() {
       {/* ── Error Alert ──────────────────── */}
       {error && (
         <div className="apply-error animate-card-entrance">
-          {error}
+          {typeof error === 'string' ? error : JSON.stringify(error)}
         </div>
       )}
 
@@ -290,6 +326,60 @@ export default function ApplyPage() {
                   <option value="Other">Other</option>
                 </select>
               </div>
+              {/* Co-Applicant Toggle */}
+              <div className="co-toggle">
+                <div className="co-toggle__header" onClick={() => setHasCoApplicant(v => !v)}>
+                  <div>
+                    <span className="co-toggle__title">Add Co-Applicant</span>
+                    <span className="co-toggle__hint">Boost eligibility with a joint application</span>
+                  </div>
+                  <div className={`co-toggle__switch ${hasCoApplicant ? 'co-toggle__switch--on' : ''}`}>
+                    <span className="co-toggle__knob" />
+                  </div>
+                </div>
+
+                {hasCoApplicant && (
+                  <div className="co-form animate-card-entrance">
+                    <div className="apply-grid-2">
+                      <div className="apply-field">
+                        <label className="apply-field__label">CO-APPLICANT FULL NAME</label>
+                        <input required={hasCoApplicant} type="text" name="full_name" value={coApplicant.full_name} onChange={handleCoChange} className="apply-field__date" placeholder="e.g. Priya Sharma" />
+                      </div>
+                      <div className="apply-field">
+                        <label className="apply-field__label">RELATIONSHIP</label>
+                        <select name="relationship" value={coApplicant.relationship} onChange={handleCoChange} className="apply-field__select">
+                          <option value="SPOUSE">Spouse</option>
+                          <option value="PARENT">Parent</option>
+                          <option value="SIBLING">Sibling</option>
+                          <option value="OTHER">Other</option>
+                        </select>
+                      </div>
+                      <div className="apply-field">
+                        <label className="apply-field__label">PHONE NUMBER</label>
+                        <input required={hasCoApplicant} type="tel" name="phone" value={coApplicant.phone} onChange={handleCoChange} className="apply-field__date" placeholder="10-digit number" />
+                      </div>
+                      <div className="apply-field">
+                        <label className="apply-field__label">MONTHLY INCOME (₹)</label>
+                        <input required={hasCoApplicant} type="number" name="monthly_income" min={0} value={coApplicant.monthly_income} onChange={handleCoChange} className="apply-field__date" />
+                      </div>
+                      <div className="apply-field">
+                        <label className="apply-field__label">EMPLOYMENT TYPE</label>
+                        <select name="employment_type" value={coApplicant.employment_type} onChange={handleCoChange} className="apply-field__select">
+                          <option value="SALARIED">Salaried</option>
+                          <option value="BUSINESS">Business</option>
+                          <option value="SELF_EMPLOYED">Self Employed</option>
+                          <option value="OTHER">Other</option>
+                        </select>
+                      </div>
+                      <div className="apply-field">
+                        <label className="apply-field__label">EXISTING EMIs (₹)</label>
+                        <input type="number" name="existing_emi" min={0} value={coApplicant.existing_emi} onChange={handleCoChange} className="apply-field__date" />
+                      </div>
+                    </div>
+                    <p className="apply-trust" style={{ textAlign: 'left', marginTop: 'var(--space-3)' }}>By continuing, the co-applicant consents to credit check.</p>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="apply-actions">
@@ -364,7 +454,7 @@ export default function ApplyPage() {
             Your documents are being verified by our AI engine.
           </p>
 
-          <Card variant="bordered" className="apply-confirm__card">
+          <Card variant="elevated" className="apply-confirm__card">
             <div className="apply-confirm__row">
               <span className="apply-confirm__label">LOAN REFERENCE</span>
               <span className="apply-confirm__value apply-confirm__value--mono">{loanData?.loan_number}</span>
@@ -671,6 +761,54 @@ export default function ApplyPage() {
           font-size: var(--text-sm);
           margin-bottom: var(--space-6);
         }
+        .co-toggle {
+          background: var(--surface-sunken);
+          border: 1px solid var(--surface-border);
+          border-radius: var(--radius-lg);
+          overflow: hidden;
+        }
+        .co-toggle__header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: var(--space-4) var(--space-5);
+          cursor: pointer;
+          user-select: none;
+        }
+        .co-toggle__title {
+          font-weight: 600;
+          font-size: var(--text-sm);
+          color: var(--text-primary);
+          display: block;
+        }
+        .co-toggle__hint {
+          font-size: var(--text-xs);
+          color: var(--text-tertiary);
+          margin-top: 2px;
+          display: block;
+        }
+        .co-toggle__switch {
+          width: 44px;
+          height: 24px;
+          background: var(--surface-border);
+          border-radius: 12px;
+          position: relative;
+          transition: background var(--transition-base);
+          flex-shrink: 0;
+        }
+        .co-toggle__switch--on { background: var(--accent-500); }
+        .co-toggle__knob {
+          position: absolute;
+          width: 18px;
+          height: 18px;
+          background: white;
+          border-radius: 50%;
+          top: 3px;
+          left: 3px;
+          transition: transform var(--transition-base);
+        }
+        .co-toggle__switch--on .co-toggle__knob { transform: translateX(20px); }
+        .co-form { padding: var(--space-5); border-top: 1px solid var(--surface-border); display: flex; flex-direction: column; gap: var(--space-4); }
       `}</style>
     </div>
   );

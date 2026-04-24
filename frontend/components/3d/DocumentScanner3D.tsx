@@ -8,10 +8,13 @@ import * as THREE from "three";
 function ScannerBox() {
   const meshRef = useRef<THREE.Mesh>(null);
   
-  useFrame((state) => {
+  const time = useRef(0);
+  
+  useFrame((state, delta) => {
+    time.current += delta;
     if (meshRef.current) {
       // Oscillate up and down to simulate scanning
-      meshRef.current.position.y = Math.sin(state.clock.elapsedTime * 2) * 0.5;
+      meshRef.current.position.y = Math.sin(time.current * 2) * 0.5;
       meshRef.current.rotation.y += 0.01;
     }
   });

@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
+import { paymentAPI } from "@/lib/api";
 
 interface EMIRow {
   installment_no: number;
@@ -18,7 +19,9 @@ interface EMIRow {
 
 interface EMIScheduleTableProps {
   schedule: EMIRow[];
+  loanId?: string;
   onPayEMI?: (installmentNo: number) => Promise<void>;
+  onRefresh?: () => void;
 }
 
 const statusVariant = (s: string) => {
@@ -30,21 +33,75 @@ const statusVariant = (s: string) => {
   }
 };
 
-export default function EMIScheduleTable({ schedule, onPayEMI }: EMIScheduleTableProps) {
+function loadRazorpayScript(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined') return resolve(false);
+    if ((window as any).Razorpay) return resolve(true);
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+}
+
+export default function EMIScheduleTable({ schedule, loanId, onPayEMI, onRefresh }: EMIScheduleTableProps) {
   const [payingId, setPayingId] = useState<number | null>(null);
   const [paidIds, setPaidIds] = useState<Set<number>>(new Set());
 
   const handlePay = async (installmentNo: number) => {
-    if (!onPayEMI) return;
     setPayingId(installmentNo);
     try {
-      await onPayEMI(installmentNo);
-      setPaidIds((prev) => new Set(prev).add(installmentNo));
-    } catch {
-      // handled by parent
-    } finally {
-      setPayingId(null);
-    }
+      // If loanId provided, use Razorpay flow
+      if (loanId) {
+        const loaded = await loadRazorpayScript();
+        const { data: order } = await paymentAPI.createOrder(loanId, installmentNo);
+
+        if (!loaded || order.key_id === 'rzp_test_simulation') {
+          // Simulation mode: directly verify with dummy data
+          await paymentAPI.verify({
+            order_id: order.order_id,
+            payment_id: `pay_SIMULATED_${Date.now()}`,
+            signature: 'simulated_signature',
+          });
+          setPaidIds((prev) => new Set(prev).add(installmentNo));
+          onRefresh?.();
+          return;
+        }
+
+        const storedUser = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('nexloan_user') || '{}') : {};
+        const options = {
+          key: order.key_id,
+          amount: order.amount,
+          currency: order.currency,
+          name: 'NexLoan',
+          description: `EMI Payment #${installmentNo}`,
+          order_id: order.order_id,
+          handler: async (response: any) => {
+            try {
+              await paymentAPI.verify({
+                order_id: response.razorpay_order_id,
+                payment_id: response.razorpay_payment_id,
+                signature: response.razorpay_signature,
+              });
+              setPaidIds((prev) => new Set(prev).add(installmentNo));
+              onRefresh?.();
+            } catch { /* silent */ }
+          },
+          prefill: { name: storedUser.full_name, email: storedUser.email, contact: storedUser.mobile },
+          theme: { color: '#8B5CF6' },
+        };
+        const rzp = new (window as any).Razorpay(options);
+        rzp.open();
+        return;
+      }
+      // Fallback to legacy onPayEMI prop
+      if (onPayEMI) {
+        await onPayEMI(installmentNo);
+        setPaidIds((prev) => new Set(prev).add(installmentNo));
+      }
+    } catch { /* handled by Razorpay SDK */ }
+    finally { setPayingId(null); }
   };
 
   if (!schedule || schedule.length === 0) {

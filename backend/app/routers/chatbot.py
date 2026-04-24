@@ -13,10 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.utils.database import get_db
 from app.utils.redis_client import store_chat_session, get_chat_session, store_otp, verify_otp
-from app.utils.auth import generate_otp
+from app.utils.auth import generate_otp, get_current_user
 from app.models.loan import User, Loan, EMISchedule
 from app.services.email_service import send_otp_email
-from app.ai.groq_service import chat
+from app.ai.chatbot_service import chat
+from app.ai.chat_memory import save_message, get_conversation_context, build_memory_injection, get_recent_messages, summarize_old_messages
 
 logger = logging.getLogger("nexloan.chatbot")
 
@@ -186,10 +187,19 @@ async def send_message(
     # Cap history to 20 turns (40 messages)
     if len(history) > 40:
         history = history[-40:]
-        
+
+    # If authenticated, inject memory context
+    memory_context = None
+    if session.get("authenticated") and session.get("user_id"):
+        try:
+            memory_context = await build_memory_injection(session["user_id"], db)
+        except Exception as e:
+            logger.warning(f"Failed to build memory context: {e}")
+
     bot_reply = await chat(
         messages=history,
-        loan_context=session.get("loan_context")
+        loan_context=session.get("loan_context"),
+        memory_context=memory_context,
     )
     
     action = None
@@ -209,5 +219,26 @@ async def send_message(
     history.append({"role": "assistant", "content": bot_reply})
     session["history"] = history
     await store_chat_session(req.session_id, session)
+
+    # Persist messages for authenticated users
+    if session.get("authenticated") and session.get("user_id"):
+        try:
+            await save_message(session["user_id"], req.session_id, "user", user_msg, db)
+            await save_message(session["user_id"], req.session_id, "assistant", bot_reply, db)
+            await db.commit()
+            # Trigger summarization if needed
+            await summarize_old_messages(session["user_id"], db)
+        except Exception as e:
+            logger.warning(f"Failed to persist chat messages: {e}")
     
     return MessageResponse(reply=bot_reply, action=action)
+
+
+@router.get("/history")
+async def get_chat_history(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get previous chat messages for authenticated user."""
+    messages = await get_recent_messages(current_user.id, db, limit=30)
+    return {"messages": messages}

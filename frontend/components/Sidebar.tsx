@@ -4,11 +4,12 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import type { UserRole } from "@/types/loan";
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [userRole, setUserRole] = useState<UserRole>("BORROWER");
   const [userName, setUserName] = useState("User");
 
   useEffect(() => {
@@ -17,8 +18,7 @@ export default function Sidebar() {
       try {
         const user = JSON.parse(userData);
         setUserName(user.full_name || "User");
-        const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL || "mitesh@theoremlabs.com";
-        setIsAdmin(user.email?.toLowerCase() === adminEmail.toLowerCase());
+        setUserRole(user.role || "BORROWER");
       } catch (err) {
         console.error("Failed to parse user data", err);
       }
@@ -31,14 +31,41 @@ export default function Sidebar() {
     router.push("/");
   };
 
-  const navLinks = [
-    { name: "My Dashboard", path: "/dashboard", icon: "dashboard" },
-    { name: "Apply for Loan", path: "/apply", icon: "apply" },
-  ];
+  // Build navigation links based on role
+  const navLinks: { name: string; path: string; icon: string }[] = [];
 
-  if (isAdmin) {
-    navLinks.push({ name: "Admin Panel", path: "/admin", icon: "admin" });
+  // BORROWER links
+  if (userRole === "BORROWER") {
+    navLinks.push(
+      { name: "My Dashboard", path: "/dashboard", icon: "dashboard" },
+      { name: "Track Loan", path: "/track", icon: "track" },
+      { name: "Apply for Loan", path: "/apply", icon: "apply" },
+    );
   }
+
+  // LOAN_OFFICER links
+  if (userRole === "LOAN_OFFICER") {
+    navLinks.push(
+      { name: "My Queue", path: "/officer", icon: "queue" },
+      { name: "All Loans", path: "/officer/loans", icon: "dashboard" },
+    );
+  }
+
+  // ADMIN links
+  if (userRole === "ADMIN" || userRole === "SUPER_ADMIN") {
+    navLinks.push(
+      { name: "Admin Panel", path: "/admin", icon: "admin" },
+      { name: "User Management", path: "/admin/users", icon: "users" },
+    );
+  }
+
+  // Role badge colors
+  const roleBadge: Record<string, { label: string; color: string }> = {
+    BORROWER: { label: "Borrower", color: "var(--accent-400)" },
+    LOAN_OFFICER: { label: "Officer", color: "var(--color-warning)" },
+    ADMIN: { label: "Admin", color: "var(--color-error)" },
+    SUPER_ADMIN: { label: "Super Admin", color: "#f43f5e" },
+  };
 
   const icons: Record<string, React.ReactNode> = {
     dashboard: (
@@ -47,6 +74,11 @@ export default function Sidebar() {
         <rect x="14" y="3" width="7" height="7" rx="1" />
         <rect x="3" y="14" width="7" height="7" rx="1" />
         <rect x="14" y="14" width="7" height="7" rx="1" />
+      </svg>
+    ),
+    track: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
       </svg>
     ),
     apply: (
@@ -62,6 +94,22 @@ export default function Sidebar() {
         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
       </svg>
     ),
+    users: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+    ),
+    queue: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+        <line x1="3" y1="9" x2="21" y2="9" />
+        <line x1="3" y1="15" x2="21" y2="15" />
+        <line x1="9" y1="3" x2="9" y2="21" />
+      </svg>
+    ),
     logout: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -70,6 +118,8 @@ export default function Sidebar() {
       </svg>
     ),
   };
+
+  const badge = roleBadge[userRole] || roleBadge.BORROWER;
 
   return (
     <>
@@ -80,11 +130,17 @@ export default function Sidebar() {
           <p className="nexloan-sidebar__welcome">
             Welcome, {userName.split(" ")[0]}
           </p>
+          <span
+            className="nexloan-sidebar__role-badge"
+            style={{ color: badge.color, borderColor: badge.color }}
+          >
+            {badge.label}
+          </span>
         </div>
 
         <nav className="nexloan-sidebar__nav">
           {navLinks.map((link) => {
-            const isActive = pathname === link.path;
+            const isActive = pathname === link.path || pathname.startsWith(link.path + "/");
             return (
               <Link
                 key={link.path}
@@ -113,7 +169,7 @@ export default function Sidebar() {
       {/* Mobile Bottom Nav */}
       <nav className="nexloan-bottom-nav">
         {navLinks.map((link) => {
-          const isActive = pathname === link.path;
+          const isActive = pathname === link.path || pathname.startsWith(link.path + "/");
           return (
             <Link
               key={link.path}
@@ -165,6 +221,18 @@ export default function Sidebar() {
           text-transform: uppercase;
           letter-spacing: 0.08em;
           margin-top: var(--space-1);
+        }
+
+        .nexloan-sidebar__role-badge {
+          display: inline-block;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          border: 1px solid;
+          border-radius: 100px;
+          padding: 2px 10px;
+          margin-top: var(--space-2);
         }
 
         .nexloan-sidebar__nav {
@@ -282,7 +350,8 @@ export default function Sidebar() {
           }
           .nexloan-sidebar__link-text,
           .nexloan-sidebar__welcome,
-          .nexloan-sidebar__logo {
+          .nexloan-sidebar__logo,
+          .nexloan-sidebar__role-badge {
             display: none;
           }
           .nexloan-sidebar__header {

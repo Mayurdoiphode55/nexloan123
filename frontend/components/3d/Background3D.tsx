@@ -41,7 +41,11 @@ function GlassShape() {
 export default function Background3D() {
   return (
     <div className="fixed inset-0 z-[-1] overflow-hidden pointer-events-none">
-      <Canvas camera={{ position: [0, 0, 5], fov: 45 }}>
+      <Canvas
+        camera={{ position: [0, 0, 5], fov: 45 }}
+        gl={{ antialias: true, powerPreference: 'high-performance' }}
+        dpr={[1, 1.5]}
+      >
         <color attach="background" args={['#030712']} />
         <ambientLight intensity={0.5} />
         <directionalLight position={[10, 10, 5]} intensity={1.5} />

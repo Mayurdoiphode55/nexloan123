@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     GROQ_TEXT_MODEL: str = "llama-3.1-8b-instant"
     GROQ_VISION_MODEL: str = "llama-3.2-11b-vision-preview"
+    # Hugging Face
+    HF_API_KEY: str = ""
+    HF_DOCUMENT_QA_MODEL: str = "impira/layoutlm-document-qa"
 
     # Cloudflare R2 (S3-compatible)
     R2_ACCOUNT_ID: str = ""

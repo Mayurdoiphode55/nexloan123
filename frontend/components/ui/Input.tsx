@@ -1,160 +1,120 @@
-"use client";
+'use client';
 
-import React, { useState, useId } from "react";
+import React, { useState, useId } from 'react';
 
-interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
-  label: string;
-  error?: string;
-  addon?: string; // Left addon like "+91"
+interface InputProps {
+  label: string
+  value: string
+  onChange?: (value: string) => void
+  type?: string
+  error?: string
+  disabled?: boolean
+  placeholder?: string
+  prefix?: string
+  addon?: string
+  required?: boolean
+  maxLength?: number
+  className?: string
+  id?: string
 }
 
 export default function Input({
   label,
-  error,
-  addon,
   value,
-  onFocus,
-  onBlur,
-  className = "",
-  ...props
+  onChange,
+  type = 'text',
+  error,
+  disabled = false,
+  placeholder,
+  prefix,
+  addon,
+  required = false,
+  maxLength,
+  className = '',
+  id,
 }: InputProps) {
-  const [focused, setFocused] = useState(false);
-  const id = useId();
-  const hasValue = value !== undefined && value !== "";
-  const isFloating = focused || hasValue;
+  const [focused, setFocused] = useState(false)
+  const generatedId = useId()
+  const inputId = id || generatedId
+  const isActive = focused || (value?.length ?? 0) > 0
 
   return (
-    <div className={`nexloan-input-wrapper ${error ? "nexloan-input-wrapper--error" : ""} ${className}`}>
-      <div className="nexloan-input-container">
-        {addon && (
-          <span className="nexloan-input-addon">{addon}</span>
-        )}
-        <div className="nexloan-input-field-wrap">
-          <input
-            id={id}
-            className={`nexloan-input-field ${addon ? "nexloan-input-field--with-addon" : ""}`}
-            value={value}
-            onFocus={(e) => {
-              setFocused(true);
-              onFocus?.(e);
+    <div className={className} style={{ position: 'relative', marginBottom: error ? '4px' : '0' }}>
+      <div style={{ position: 'relative' }}>
+        {(prefix || addon) && (
+          <span
+            style={{
+              position: 'absolute',
+              left: '14px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              color: 'var(--text-tertiary)',
+              fontSize: '14px',
+              fontFamily: 'var(--font-mono)',
+              zIndex: 1,
+              pointerEvents: 'none',
             }}
-            onBlur={(e) => {
-              setFocused(false);
-              onBlur?.(e);
-            }}
-            {...props}
-          />
-          <label
-            htmlFor={id}
-            className={`nexloan-input-label ${isFloating ? "nexloan-input-label--float" : ""}`}
           >
-            {label}
-          </label>
-        </div>
+            {prefix || addon}
+          </span>
+        )}
+        <input
+          id={inputId}
+          type={type}
+          value={value}
+          required={required}
+          maxLength={maxLength}
+          onChange={e => onChange && onChange(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          disabled={disabled}
+          placeholder={isActive ? placeholder : ''}
+          style={{
+            width: '100%',
+            padding: (prefix || addon) ? '16px 16px 8px 50px' : '16px 16px 8px 16px',
+            paddingTop: isActive ? '22px' : '16px',
+            paddingBottom: isActive ? '8px' : '16px',
+            background: 'var(--surface-sunken)',
+            border: `1px solid ${error ? 'var(--color-error)' : focused ? 'var(--accent-400)' : 'var(--surface-border)'}`,
+            borderRadius: 'var(--radius-md)',
+            color: 'var(--text-primary)',
+            fontSize: '14px',
+            fontFamily: 'var(--font-body)',
+            outline: 'none',
+            transition: 'all var(--transition-base)',
+            boxShadow: focused && !error ? '0 0 0 3px var(--accent-glow)' : 'none',
+          }}
+        />
+        <label
+          htmlFor={inputId}
+          style={{
+            position: 'absolute',
+            left: (prefix || addon) && !isActive ? '50px' : '16px',
+            top: isActive ? '8px' : '50%',
+            transform: isActive ? 'none' : 'translateY(-50%)',
+            fontSize: isActive ? '11px' : '14px',
+            color: isActive ? (error ? 'var(--color-error)' : 'var(--accent-400)') : 'var(--text-tertiary)',
+            fontWeight: isActive ? 500 : 400,
+            pointerEvents: 'none',
+            transition: 'all var(--transition-base)',
+            letterSpacing: isActive ? '0.02em' : '0',
+          }}
+        >
+          {label}
+        </label>
       </div>
-      {error && <p className="nexloan-input-error">{error}</p>}
-
-      <style jsx>{`
-        .nexloan-input-wrapper {
-          position: relative;
-          width: 100%;
-        }
-
-        .nexloan-input-container {
-          display: flex;
-          align-items: stretch;
-          background: var(--surface-sunken);
-          border: 1px solid var(--surface-border);
-          border-radius: var(--radius-md);
-          transition: all var(--transition-base);
-        }
-
-        .nexloan-input-container:focus-within {
-          border-color: var(--accent-400);
-          box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15);
-        }
-
-        .nexloan-input-wrapper--error .nexloan-input-container {
-          border-color: var(--color-error);
-        }
-        .nexloan-input-wrapper--error .nexloan-input-container:focus-within {
-          box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
-        }
-
-        .nexloan-input-addon {
-          display: flex;
-          align-items: center;
-          padding: 0 12px 0 16px;
-          font-family: var(--font-mono);
-          font-size: var(--text-sm);
-          font-weight: 600;
-          color: var(--text-tertiary);
-          border-right: 1px solid var(--surface-border);
-          user-select: none;
-          white-space: nowrap;
-        }
-
-        .nexloan-input-field-wrap {
-          position: relative;
-          flex: 1;
-          min-height: 52px;
-        }
-
-        .nexloan-input-label {
-          position: absolute;
-          left: 16px;
-          top: 50%;
-          transform: translateY(-50%);
-          font-family: var(--font-body);
-          font-size: var(--text-base);
-          color: var(--text-tertiary);
-          pointer-events: none;
-          transition: all var(--transition-base);
-          transform-origin: left center;
-        }
-
-        .nexloan-input-label--float,
-        .nexloan-input-field:-webkit-autofill ~ .nexloan-input-label {
-          top: 8px;
-          transform: translateY(0);
-          font-size: var(--text-xs);
-          color: var(--text-accent);
-          letter-spacing: 0.02em;
-        }
-
-        .nexloan-input-field {
-          width: 100%;
-          height: 100%;
-          padding: 22px 16px 8px 16px;
-          background: transparent;
-          border: none;
-          outline: none;
-          font-family: var(--font-body);
-          font-size: var(--text-base);
-          color: var(--text-primary);
-          line-height: 1.4;
-        }
-
-        .nexloan-input-field--with-addon {
-          padding-left: 12px;
-        }
-
-        .nexloan-input-field::placeholder {
-          color: transparent;
-        }
-
-        .nexloan-input-field:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .nexloan-input-error {
-          margin-top: var(--space-1);
-          font-size: var(--text-sm);
-          color: var(--color-error);
-          padding-left: var(--space-1);
-        }
-      `}</style>
+      {error && (
+        <p
+          style={{
+            color: 'var(--color-error)',
+            fontSize: '12px',
+            marginTop: '6px',
+            paddingLeft: '4px',
+          }}
+        >
+          {error}
+        </p>
+      )}
     </div>
-  );
+  )
 }

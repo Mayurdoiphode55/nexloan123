@@ -10,6 +10,12 @@
 
 # Custom files to ignore
 prompt.md
+prompt1.md
+prompt2.md
+ui.md
+UI.md
+DEPLOYMENT.md
+NexLoan_Project_Documentation.tex
 
 # Python
 __pycache__/

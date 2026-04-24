@@ -1,10 +1,10 @@
 "use client";
 
 import React from "react";
-import { AuditLogItem } from "@/lib/api";
+import type { AuditLogEntry } from "@/types/loan";
 
 interface AuditTrailProps {
-  entries: AuditLogItem[];
+  entries: AuditLogEntry[];
 }
 
 export default function AuditTrail({ entries }: AuditTrailProps) {

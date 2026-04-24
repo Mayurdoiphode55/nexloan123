@@ -8,13 +8,16 @@ import * as THREE from "three";
 function Orb({ isTyping }: { isTyping: boolean }) {
   const meshRef = useRef<THREE.Mesh>(null);
 
+  const time = useRef(0);
+
   useFrame((state, delta) => {
+    time.current += delta;
     if (meshRef.current) {
       meshRef.current.rotation.x += delta * 0.2;
       meshRef.current.rotation.y += delta * 0.3;
       // Pulse scale when typing
       const scale = isTyping
-        ? 1 + Math.sin(state.clock.elapsedTime * 5) * 0.1
+        ? 1 + Math.sin(time.current * 5) * 0.1
         : 1;
       meshRef.current.scale.lerp(new THREE.Vector3(scale, scale, scale), 0.1);
     }

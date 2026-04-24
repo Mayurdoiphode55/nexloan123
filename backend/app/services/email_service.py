@@ -422,3 +422,178 @@ def _no_dues_certificate_template(
     </body>
     </html>
     """
+
+
+# ─── v2.0 Email Templates ────────────────────────────────────────────────────
+
+
+async def send_counter_offer_email(
+    to_email: str, name: str, loan_number: str,
+    original_amount: float, counter_amount: float, counter_rate: float, emi_amount: float,
+) -> bool:
+    """Send counter offer email — B6.5 Template 1."""
+    try:
+        html = f"""
+        <html><body style="font-family:Inter,sans-serif;background:#09090B;color:#FAFAFA;padding:32px;">
+        <div style="max-width:560px;margin:auto;background:#111113;border-radius:16px;padding:32px;border:1px solid rgba(255,255,255,0.07);">
+            <h2 style="color:#A78BFA;margin:0 0 8px;">We have a special offer for you</h2>
+            <p style="color:#A1A1AA;font-size:14px;">Loan {loan_number}</p>
+            <hr style="border:1px solid rgba(255,255,255,0.07);margin:20px 0;">
+            <p>Hi {name},</p>
+            <p>While we couldn't approve your full request of <strong>₹{original_amount:,.0f}</strong>, we can offer you:</p>
+            <div style="background:#1C1C1F;border-radius:12px;padding:24px;margin:20px 0;text-align:center;">
+                <p style="color:#FBBF24;font-size:12px;text-transform:uppercase;letter-spacing:0.1em;margin:0;">Approved Amount</p>
+                <p style="font-size:36px;font-weight:700;margin:8px 0;color:#A78BFA;">₹{counter_amount:,.0f}</p>
+                <p style="color:#A1A1AA;">at {counter_rate}% p.a. · EMI: ₹{emi_amount:,.0f}/month</p>
+            </div>
+            <p>Log in to your NexLoan dashboard to accept or decline this offer.</p>
+            <p style="color:#A1A1AA;font-size:13px;margin-top:24px;">— NexLoan, Powered by Theoremlabs</p>
+        </div>
+        </body></html>
+        """
+        return await _send_brevo_api_email(to_email, name, f"We have a special offer for you — Loan {loan_number}", html)
+    except Exception as e:
+        logger.error(f"❌ Counter offer email failed: {e}")
+        return False
+
+
+async def send_rejection_with_plan_email(
+    to_email: str, name: str, loan_number: str,
+    reason: str, improvement_plan: str, reapply_date: str,
+) -> bool:
+    """Send rejection email with improvement plan — B6.5 Template 2."""
+    try:
+        plan_html = improvement_plan.replace("\n", "<br>") if improvement_plan else ""
+        html = f"""
+        <html><body style="font-family:Inter,sans-serif;background:#09090B;color:#FAFAFA;padding:32px;">
+        <div style="max-width:560px;margin:auto;background:#111113;border-radius:16px;padding:32px;border:1px solid rgba(255,255,255,0.07);">
+            <h2 style="color:#F59E0B;margin:0 0 8px;">About your NexLoan application</h2>
+            <p style="color:#A1A1AA;font-size:14px;">Loan {loan_number}</p>
+            <hr style="border:1px solid rgba(255,255,255,0.07);margin:20px 0;">
+            <p>Hi {name},</p>
+            <p>After careful review, we're unable to approve your loan at this time.</p>
+            <div style="background:rgba(239,68,68,0.08);border-left:3px solid #EF4444;padding:16px;border-radius:8px;margin:16px 0;">
+                <p style="margin:0;font-size:14px;">{reason}</p>
+            </div>
+            <h3 style="color:#A78BFA;margin-top:24px;">Your 3-Step Improvement Plan</h3>
+            <div style="background:#1C1C1F;border-radius:12px;padding:20px;margin:16px 0;">
+                <p style="font-size:14px;line-height:1.8;">{plan_html}</p>
+            </div>
+            <div style="background:rgba(59,130,246,0.08);border-left:3px solid #3B82F6;padding:16px;border-radius:8px;margin:16px 0;">
+                <p style="margin:0;font-size:14px;">📅 You can reapply after <strong>{reapply_date}</strong></p>
+            </div>
+            <p style="color:#A1A1AA;font-size:13px;margin-top:24px;">— NexLoan, Powered by Theoremlabs</p>
+        </div>
+        </body></html>
+        """
+        return await _send_brevo_api_email(to_email, name, f"About your NexLoan application — {loan_number}", html)
+    except Exception as e:
+        logger.error(f"❌ Rejection with plan email failed: {e}")
+        return False
+
+
+async def send_emi_pause_confirmation(
+    to_email: str, name: str, loan_number: str,
+    paused_installment_no: int, new_final_date: str,
+) -> bool:
+    """Send EMI pause confirmation — B6.5 Template 3."""
+    try:
+        html = f"""
+        <html><body style="font-family:Inter,sans-serif;background:#09090B;color:#FAFAFA;padding:32px;">
+        <div style="max-width:560px;margin:auto;background:#111113;border-radius:16px;padding:32px;border:1px solid rgba(255,255,255,0.07);">
+            <h2 style="color:#22C55E;margin:0 0 8px;">EMI Pause Confirmed ⏸️</h2>
+            <p style="color:#A1A1AA;font-size:14px;">Loan {loan_number}</p>
+            <hr style="border:1px solid rgba(255,255,255,0.07);margin:20px 0;">
+            <p>Hi {name},</p>
+            <p>Your EMI payment has been paused as requested.</p>
+            <div style="background:#1C1C1F;border-radius:12px;padding:20px;margin:20px 0;">
+                <p><strong>Paused EMI:</strong> Installment #{paused_installment_no}</p>
+                <p><strong>New Final Payment Date:</strong> {new_final_date}</p>
+            </div>
+            <p style="font-size:14px;color:#A1A1AA;">This installment has been moved to the end of your schedule. You have 0 pauses remaining this year.</p>
+            <p style="color:#A1A1AA;font-size:13px;margin-top:24px;">— NexLoan, Powered by Theoremlabs</p>
+        </div>
+        </body></html>
+        """
+        return await _send_brevo_api_email(to_email, name, f"EMI Pause Confirmed — {loan_number}", html)
+    except Exception as e:
+        logger.error(f"❌ EMI pause email failed: {e}")
+        return False
+
+
+async def send_closure_celebration_email(
+    to_email: str, name: str, loan_number: str,
+    original_amount: float, total_paid: float, interest_saved: float,
+    score_improvement: int, reapply_offer_amount: float, reapply_offer_rate: float,
+) -> bool:
+    """Send closure celebration email with journey stats and re-offer — B6.5 Template 4."""
+    try:
+        html = f"""
+        <html><body style="font-family:Inter,sans-serif;background:#09090B;color:#FAFAFA;padding:32px;">
+        <div style="max-width:560px;margin:auto;background:#111113;border-radius:16px;padding:32px;border:1px solid rgba(255,255,255,0.07);">
+            <h2 style="color:#22C55E;margin:0 0 8px;">🎉 Loan Closed — You did it, {name}!</h2>
+            <p style="color:#A1A1AA;font-size:14px;">Loan {loan_number}</p>
+            <hr style="border:1px solid rgba(255,255,255,0.07);margin:20px 0;">
+
+            <div style="display:flex;gap:16px;margin:20px 0;">
+                <div style="flex:1;background:#1C1C1F;border-radius:12px;padding:16px;text-align:center;">
+                    <p style="color:#A1A1AA;font-size:11px;text-transform:uppercase;margin:0;">Total Repaid</p>
+                    <p style="font-size:24px;font-weight:700;margin:8px 0;">₹{total_paid:,.0f}</p>
+                </div>
+                <div style="flex:1;background:#1C1C1F;border-radius:12px;padding:16px;text-align:center;">
+                    <p style="color:#A1A1AA;font-size:11px;text-transform:uppercase;margin:0;">Interest Saved</p>
+                    <p style="font-size:24px;font-weight:700;margin:8px 0;color:#22C55E;">₹{interest_saved:,.0f}</p>
+                </div>
+                <div style="flex:1;background:#1C1C1F;border-radius:12px;padding:16px;text-align:center;">
+                    <p style="color:#A1A1AA;font-size:11px;text-transform:uppercase;margin:0;">Score Improved</p>
+                    <p style="font-size:24px;font-weight:700;margin:8px 0;color:#FBBF24;">+{score_improvement} pts</p>
+                </div>
+            </div>
+
+            <div style="background:linear-gradient(135deg,rgba(139,92,246,0.15),rgba(59,130,246,0.15));border:1px solid rgba(139,92,246,0.3);border-radius:12px;padding:24px;margin:24px 0;text-align:center;">
+                <p style="color:#A78BFA;font-size:12px;text-transform:uppercase;letter-spacing:0.1em;margin:0;">You're Pre-Approved</p>
+                <p style="font-size:32px;font-weight:700;margin:8px 0;">₹{reapply_offer_amount:,.0f}</p>
+                <p style="color:#A1A1AA;">at {reapply_offer_rate}% p.a. — Your Loyalty Rate</p>
+            </div>
+
+            <hr style="border:1px solid rgba(255,255,255,0.07);margin:24px 0;">
+            <h3 style="color:#FAFAFA;font-size:16px;">No Dues Certificate</h3>
+            <p style="font-size:14px;color:#A1A1AA;">This certifies that the personal loan account <strong>{loan_number}</strong> associated with <strong>{name}</strong> has been closed and there are no outstanding dues payable to NexLoan.</p>
+            <p style="color:#52525B;font-size:12px;margin-top:16px;">Issued by NexLoan — Powered by Theoremlabs. Computer-generated, no signature required.</p>
+        </div>
+        </body></html>
+        """
+        return await _send_brevo_api_email(to_email, name, f"🎉 Loan Closed — You did it, {name}!", html)
+    except Exception as e:
+        logger.error(f"❌ Closure celebration email failed: {e}")
+        return False
+
+
+async def send_reapply_reminder_email(
+    to_email: str, name: str, loan_number: str, improvement_plan: str,
+) -> bool:
+    """Send 90-day reapply reminder — B6.5 Template 5."""
+    try:
+        plan_html = improvement_plan.replace("\n", "<br>") if improvement_plan else "Complete your improvement steps and try again."
+        html = f"""
+        <html><body style="font-family:Inter,sans-serif;background:#09090B;color:#FAFAFA;padding:32px;">
+        <div style="max-width:560px;margin:auto;background:#111113;border-radius:16px;padding:32px;border:1px solid rgba(255,255,255,0.07);">
+            <h2 style="color:#A78BFA;margin:0 0 8px;">Ready to try again?</h2>
+            <p style="color:#A1A1AA;font-size:14px;">Your NexLoan pre-check is ready</p>
+            <hr style="border:1px solid rgba(255,255,255,0.07);margin:20px 0;">
+            <p>Hi {name},</p>
+            <p>It's been 90 days since your loan application ({loan_number}). We'd love to see you back!</p>
+            <h3 style="color:#A78BFA;margin-top:24px;">Your Improvement Plan (Reminder)</h3>
+            <div style="background:#1C1C1F;border-radius:12px;padding:20px;margin:16px 0;">
+                <p style="font-size:14px;line-height:1.8;">{plan_html}</p>
+            </div>
+            <p>Start fresh with our <strong>Loan Readiness Checker</strong> — no KYC needed, instant result.</p>
+            <p style="color:#A1A1AA;font-size:13px;margin-top:24px;">— NexLoan, Powered by Theoremlabs</p>
+        </div>
+        </body></html>
+        """
+        return await _send_brevo_api_email(to_email, name, f"Ready to try again? Your NexLoan pre-check is ready", html)
+    except Exception as e:
+        logger.error(f"❌ Reapply reminder email failed: {e}")
+        return False
+

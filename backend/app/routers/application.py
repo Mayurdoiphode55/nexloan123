@@ -17,7 +17,8 @@ from app.models.loan import Loan, LoanStatus, EmploymentType, KYCDocument, Audit
 from app.utils.database import get_db
 from app.utils.auth import get_current_user
 from app.services.storage import upload_document
-from app.ai.ocr_service import analyze_document_completeness as check_document_completeness, check_name_match_local as check_name_match
+from app.ai.kyc_pipeline import run_kyc_pipeline
+from app.services.milestone_service import create_initial_milestones, advance_milestone, update_document_status
 
 logger = logging.getLogger("nexloan.application")
 
@@ -118,6 +119,10 @@ async def create_inquiry(
     
     logger.info(f"✅ Loan Inquiry {loan_number} created for user {current_user.email}")
     
+    # Create application tracking milestones
+    await create_initial_milestones(new_loan.id, db)
+    await db.commit()
+    
     return InquiryResponse(
         loan_id=str(new_loan.id),
         loan_number=new_loan.loan_number,
@@ -149,10 +154,11 @@ async def upload_kyc(
     if not loan:
         raise HTTPException(status_code=404, detail="Loan not found")
         
-    if loan.status != LoanStatus.INQUIRY:
+    # Allow upload from INQUIRY (first attempt) or KYC_PENDING (retry after partial failure)
+    if loan.status not in (LoanStatus.INQUIRY, LoanStatus.KYC_PENDING):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
-            detail=f"Cannot upload KYC for loan in {loan.status.value} status."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot upload KYC for loan in {loan.status.value} status.",
         )
 
     # 1. Upload to R2
@@ -173,78 +179,94 @@ async def upload_kyc(
         logger.error(f"Failed to upload documents to R2: {e}")
         raise HTTPException(status_code=500, detail="Failed to upload documents. Please try again.")
 
-    # 2. AI Document Checks (Local Tesseract OCR + Regex)
-    logger.info(f"Running local OCR document checks...")
-    pan_result = await check_document_completeness(pan_bytes, "PAN", current_user.full_name)
-    aadhaar_result = await check_document_completeness(aadhaar_bytes, "AADHAAR", current_user.full_name)
-    
-    # Extract names from results
+    # 2. AI Document Checks — 4-Layer Pipeline Orchestrator
+    try:
+        logger.info(f"🚀 Running 4-Layer KYC Pipeline for {loan.loan_number}...")
+        pipeline_result = await run_kyc_pipeline(pan_bytes, aadhaar_bytes, current_user.full_name)
+    except Exception as e:
+        logger.error(f"❌ KYC Pipeline crashed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"AI pipeline error: {str(e)}")
+
+    final_verdict = pipeline_result["final_verdict"]
+    pan_result = pipeline_result["pan_result"]
+    aadhaar_result = pipeline_result["aadhaar_result"]
+    remarks = pipeline_result["ai_remarks"]
+
     pan_name = pan_result.get("name_extracted", "")
     aadhaar_name = aadhaar_result.get("name_extracted", "")
-    
-    # 3. Name Match (Local DiffLib Sequence Matching)
-    logger.info(f"Running local name match...")
-    name_match_result = await check_name_match(current_user.full_name, str(pan_name), str(aadhaar_name))
-
-    # 4. Overall KYC Verdict Logic
-    # PASS: Both docs pass vision + names match text check
-    # FAIL: Fraud risk is HIGH
-    # MANUAL_REVIEW: Everything else
-    
-    if name_match_result.get("fraud_risk") == "HIGH":
-        final_verdict = "FAIL"
-        remarks = "High fraud risk detected in name matching."
-    elif (pan_result.get("verdict") == "PASS" and 
-          aadhaar_result.get("verdict") == "PASS" and 
-          name_match_result.get("names_match") == True):
-        final_verdict = "PASS"
-        remarks = "AI verification passed successfully."
-    else:
-        final_verdict = "MANUAL_REVIEW"
-        remarks = "Requires manual review due to missing info or anomalies."
 
     new_status = LoanStatus.KYC_VERIFIED if final_verdict == "PASS" else LoanStatus.KYC_PENDING
 
-    # 5. Save KYCDocument record
-    kyc_doc = KYCDocument(
-        loan_id=loan.id,
-        pan_doc_url=pan_url,
-        pan_number=pan_result.get("masked_doc_number"),
-        pan_name_extracted=pan_name,
-        pan_legible=pan_result.get("is_legible", False),
-        pan_name_match=pan_result.get("name_matches_applicant", False),
-        aadhaar_doc_url=aadhaar_url,
-        aadhaar_number=aadhaar_result.get("masked_doc_number"),
-        aadhaar_name_extracted=aadhaar_name,
-        aadhaar_legible=aadhaar_result.get("is_legible", False),
-        aadhaar_photo_present=aadhaar_result.get("photo_or_signature_present", False),
-        ai_verdict=final_verdict,
-        ai_remarks=remarks,
-        ai_raw_response={
-            "pan": pan_result,
-            "aadhaar": aadhaar_result,
-            "name_match": name_match_result
-        },
-        verified_at=datetime.utcnow() if final_verdict == "PASS" else None
-    )
-    db.add(kyc_doc)
-    
-    # 6. Update Loan Status & Audit
-    old_status = loan.status
-    loan.status = new_status
-    
-    audit = AuditLog(
-        loan_id=loan.id,
-        action="KYC_UPLOADED",
-        from_status=old_status.value,
-        to_status=new_status.value,
-        actor=str(current_user.id),
-        metadata_={"verdict": final_verdict, "remarks": remarks}
-    )
-    db.add(audit)
-    
-    await db.commit()
-    
+    # 3. Save KYCDocument record (upsert — update if retry)
+    try:
+        existing_kyc = await db.execute(
+            select(KYCDocument).where(KYCDocument.loan_id == loan.id)
+        )
+        kyc_doc = existing_kyc.scalar_one_or_none()
+
+        if kyc_doc:
+            # Update existing record on retry
+            kyc_doc.pan_doc_url = pan_url
+            kyc_doc.pan_number = pan_result.get("masked_doc_number") or pan_result.get("doc_number")
+            kyc_doc.pan_name_extracted = pan_name
+            kyc_doc.pan_legible = pan_result.get("is_legible", False)
+            kyc_doc.pan_name_match = pan_result.get("name_matches_applicant", False)
+            kyc_doc.aadhaar_doc_url = aadhaar_url
+            kyc_doc.aadhaar_number = aadhaar_result.get("masked_doc_number") or aadhaar_result.get("doc_number")
+            kyc_doc.aadhaar_name_extracted = aadhaar_name
+            kyc_doc.aadhaar_legible = aadhaar_result.get("is_legible", False)
+            kyc_doc.aadhaar_photo_present = aadhaar_result.get("photo_or_signature_present", False)
+            kyc_doc.ai_verdict = final_verdict
+            kyc_doc.ai_remarks = remarks
+            kyc_doc.ai_raw_response = pipeline_result["ai_raw_response"]
+            kyc_doc.verified_at = datetime.utcnow() if final_verdict == "PASS" else None
+        else:
+            # First attempt — insert new record
+            kyc_doc = KYCDocument(
+                loan_id=loan.id,
+                pan_doc_url=pan_url,
+                pan_number=pan_result.get("masked_doc_number") or pan_result.get("doc_number"),
+                pan_name_extracted=pan_name,
+                pan_legible=pan_result.get("is_legible", False),
+                pan_name_match=pan_result.get("name_matches_applicant", False),
+                aadhaar_doc_url=aadhaar_url,
+                aadhaar_number=aadhaar_result.get("masked_doc_number") or aadhaar_result.get("doc_number"),
+                aadhaar_name_extracted=aadhaar_name,
+                aadhaar_legible=aadhaar_result.get("is_legible", False),
+                aadhaar_photo_present=aadhaar_result.get("photo_or_signature_present", False),
+                ai_verdict=final_verdict,
+                ai_remarks=remarks,
+                ai_raw_response=pipeline_result["ai_raw_response"],
+                verified_at=datetime.utcnow() if final_verdict == "PASS" else None
+            )
+            db.add(kyc_doc)
+
+        # 4. Update Loan Status & Audit
+        old_status = loan.status
+        loan.status = new_status
+
+        audit = AuditLog(
+            loan_id=loan.id,
+            action="KYC_UPLOADED",
+            from_status=old_status.value,
+            to_status=new_status.value,
+            actor=str(current_user.id),
+            metadata_={"verdict": final_verdict, "layers_used": len(pipeline_result["ai_raw_response"].get("pan_layers", []))}
+        )
+        db.add(audit)
+
+        await db.commit()
+
+        # Advance milestone tracking
+        doc_status = "VERIFIED" if final_verdict == "PASS" else "PENDING"
+        await update_document_status(loan.id, "PAN", doc_status, db)
+        await update_document_status(loan.id, "AADHAAR", doc_status, db)
+        await advance_milestone(loan.id, "DOCUMENTS_UPLOADED", db)
+        await db.commit()
+    except Exception as e:
+        logger.error(f"❌ Failed to save KYC result: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to save verification result: {str(e)}")
+
     return KYCUploadResponse(
         loan_id=str(loan.id),
         verdict=final_verdict,

@@ -1,82 +1,57 @@
-"use client";
+'use client';
 
-import React from "react";
-
-type CardVariant = "default" | "elevated" | "bordered" | "interactive";
+import React from 'react';
 
 interface CardProps {
-  variant?: CardVariant;
-  padding?: "default" | "large";
-  children: React.ReactNode;
-  className?: string;
-  onClick?: () => void;
+  variant?: 'default' | 'elevated' | 'accent-border'
+  hover?: boolean
+  padding?: 'sm' | 'md' | 'lg'
+  children: React.ReactNode
+  className?: string
+  style?: React.CSSProperties
+  id?: string
 }
 
 export default function Card({
-  variant = "default",
-  padding = "default",
+  variant = 'default',
+  hover = false,
+  padding = 'md',
   children,
-  className = "",
-  onClick,
+  className = '',
+  style = {},
+  id,
 }: CardProps) {
-  const Tag = onClick ? "button" : "div";
+  const paddingMap = { sm: '16px', md: '24px', lg: '32px' }
+
+  const baseStyles: React.CSSProperties = {
+    background: 'var(--surface-raised)',
+    border: '1px solid var(--surface-border)',
+    borderRadius: 'var(--radius-xl)',
+    padding: paddingMap[padding],
+    transition: 'all var(--transition-base)',
+    ...style,
+  }
+
+  if (variant === 'accent-border') {
+    baseStyles.borderColor = 'var(--accent-500)'
+    baseStyles.boxShadow = 'var(--shadow-accent)'
+  } else if (variant === 'elevated') {
+    baseStyles.boxShadow = 'var(--shadow-md)'
+  }
 
   return (
-    <Tag
-      className={`nexloan-card nexloan-card--${variant} nexloan-card--pad-${padding} ${className}`}
-      onClick={onClick}
-      {...(Tag === "button" ? { type: "button" as const } : {})}
+    <div
+      id={id}
+      className={`nexloan-card ${hover ? 'nexloan-card--hover' : ''} ${className}`}
+      style={baseStyles}
     >
       {children}
-
       <style jsx>{`
-        .nexloan-card {
-          background: var(--surface-raised);
-          border: 1px solid var(--surface-border);
-          border-radius: var(--radius-xl);
-          transition: all var(--transition-base);
-          text-align: left;
-          width: 100%;
-        }
-
-        .nexloan-card--pad-default {
-          padding: var(--space-6);
-        }
-        .nexloan-card--pad-large {
-          padding: var(--space-8);
-        }
-
-        /* ── Elevated ────────────────────── */
-        .nexloan-card--elevated {
-          box-shadow: var(--shadow-md);
-        }
-
-        /* ── Bordered ────────────────────── */
-        .nexloan-card--bordered {
-          border-width: 2px;
-        }
-
-        /* ── Interactive ─────────────────── */
-        .nexloan-card--interactive {
-          cursor: pointer;
-          border: 1px solid var(--surface-border);
-        }
-        .nexloan-card--interactive:hover {
-          border-color: var(--surface-border-hover);
+        .nexloan-card--hover:hover {
           transform: translateY(-2px);
-          box-shadow: var(--shadow-md);
-        }
-        .nexloan-card--interactive:active {
-          transform: translateY(0);
-        }
-
-        button.nexloan-card {
-          cursor: pointer;
-          font: inherit;
-          color: inherit;
-          outline: none;
+          border-color: var(--surface-border-strong) !important;
         }
       `}</style>
-    </Tag>
-  );
+    </div>
+  )
 }

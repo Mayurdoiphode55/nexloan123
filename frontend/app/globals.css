@@ -41,18 +41,18 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--neutral-600);
+  background: var(--text-tertiary);
   border-radius: var(--radius-full);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--neutral-500);
+  background: var(--text-secondary);
 }
 
 /* Firefox */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--neutral-600) var(--surface-overlay);
+  scrollbar-color: var(--text-tertiary) var(--surface-overlay);
 }
 
 /* ── Selection ───────────────────────────────────────────── */

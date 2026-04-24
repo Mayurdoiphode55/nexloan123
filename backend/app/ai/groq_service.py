@@ -30,6 +30,70 @@ def _clean_json_response(res_text: str) -> str:
 
 
 # Removed vision and name match routes. Mapped to local OCR service now.
+import base64
+
+async def analyze_document_vision(file_bytes: bytes, doc_type: str, applicant_name: str) -> dict:
+    """
+    Sends a document image to Llama 3.2 Vision for structured analysis.
+    Overcomes limitations of local OCR (Tesseract) in complex layouts.
+    """
+    try:
+        # Encode image to base64
+        base64_image = base64.b64encode(file_bytes).decode('utf-8')
+        
+        system_prompt = f"""You are a KYC verification expert for NexLoan. 
+Analyze the provided {doc_type} document image for applicant: {applicant_name}.
+EXTRACT information WITH HIGH PRECISION. If a field is not visible, return null.
+
+Return ONLY a valid JSON object with these fields:
+- "is_legible": boolean
+- "doc_number": string (Standard format, e.g., ABCDE1234F for PAN, XXXX XXXX XXXX for Aadhaar)
+- "name_extracted": string (The FULL NAME as printed on the card)
+- "name_matches_applicant": boolean (Fuzzy match vs {applicant_name})
+- "photo_present": boolean
+- "verdict": "PASS" | "FAIL" | "MANUAL_REVIEW"
+- "remarks": string (Brief explanation)
+
+{doc_type} SPECIFIC RULES:
+- Aadhaar: Look for the 12-digit number (usually formatted as 0000 0000 0000).
+- PAN: Look for the 10-char alphanumeric string (5 letters, 4 digits, 1 letter).
+- If the document is partially cut, blurry, or a duplicate, set verdict to FAIL.
+"""
+
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": system_prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
+                    },
+                ],
+            }
+        ]
+
+        response = await groq_client.chat.completions.create(
+            messages=messages,
+            model=settings.GROQ_VISION_MODEL,
+            temperature=0.1,  # Low temperature for deterministic extraction
+            response_format={"type": "json_object"},
+        )
+
+        content = response.choices[0].message.content
+        return json.loads(_clean_json_response(content))
+
+    except Exception as e:
+        logger.error(f"❌ Groq Vision API Error: {e}")
+        # Return fallback structure so the system doesn't crash
+        return {
+            "verdict": "MANUAL_REVIEW",
+            "remarks": f"Vision API error: {str(e)}",
+            "is_legible": False,
+            "name_extracted": None,
+            "name_matches_applicant": False,
+        }
+
 async def chat(messages: list, loan_context: dict = None) -> str:
     """
     General chatbot handler using Groq.

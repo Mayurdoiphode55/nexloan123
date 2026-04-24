@@ -3,6 +3,9 @@
 import React from "react";
 import Sidebar from "@/components/Sidebar";
 
+// DEV: Token is injected synchronously by the inline script in app/layout.tsx.
+// No auth checks needed here — just render the layout immediately.
+
 export default function AppLayout({
   children,
 }: {

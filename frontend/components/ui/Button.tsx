@@ -1,159 +1,131 @@
-"use client";
+'use client';
 
-import React from "react";
+import React from 'react';
 
-type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive";
-type ButtonSize = "sm" | "md" | "lg";
-
-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  loading?: boolean;
-  fullWidth?: boolean;
-  children: React.ReactNode;
+interface ButtonProps {
+  variant?: 'primary' | 'secondary' | 'ghost' | 'destructive'
+  size?: 'sm' | 'md' | 'lg'
+  loading?: boolean
+  disabled?: boolean
+  children: React.ReactNode
+  onClick?: () => void
+  type?: 'button' | 'submit'
+  className?: string
+  id?: string
+  fullWidth?: boolean
+  style?: React.CSSProperties
 }
 
 export default function Button({
-  variant = "primary",
-  size = "md",
+  variant = 'primary',
+  size = 'md',
   loading = false,
-  fullWidth = false,
+  disabled = false,
   children,
-  disabled,
-  className = "",
-  ...props
+  onClick,
+  type = 'button',
+  className = '',
+  id,
+  fullWidth = false,
+  style = {},
 }: ButtonProps) {
-  const isDisabled = disabled || loading;
+  const baseStyles: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    fontFamily: 'var(--font-body)',
+    fontWeight: 600,
+    borderRadius: 'var(--radius-md)',
+    cursor: disabled || loading ? 'not-allowed' : 'pointer',
+    transition: 'all var(--transition-fast)',
+    border: 'none',
+    opacity: disabled ? 0.5 : 1,
+    position: 'relative',
+    whiteSpace: 'nowrap',
+  }
+
+  const sizeStyles: Record<string, React.CSSProperties> = {
+    sm: { padding: '7px 14px', fontSize: '13px' },
+    md: { padding: '10px 20px', fontSize: '14px' },
+    lg: { padding: '14px 28px', fontSize: '16px' },
+  }
+
+  const variantStyles: Record<string, React.CSSProperties> = {
+    primary: {
+      background: 'var(--accent-500)',
+      color: '#FFFFFF',
+    },
+    secondary: {
+      background: 'transparent',
+      color: 'var(--text-primary)',
+      border: '1px solid var(--surface-border-strong)',
+    },
+    ghost: {
+      background: 'transparent',
+      color: 'var(--text-secondary)',
+      border: 'none',
+    },
+    destructive: {
+      background: 'transparent',
+      color: 'var(--color-error)',
+      border: '1px solid rgba(239,68,68,0.3)',
+    },
+  }
 
   return (
     <button
-      className={`nexloan-btn nexloan-btn--${variant} nexloan-btn--${size} ${fullWidth ? "nexloan-btn--full" : ""} ${className}`}
-      disabled={isDisabled}
-      {...props}
+      id={id}
+      type={type}
+      disabled={disabled || loading}
+      onClick={onClick}
+      className={`nexloan-btn nexloan-btn--${variant} ${className}`}
+      style={{
+        ...baseStyles,
+        ...sizeStyles[size],
+        ...variantStyles[variant],
+        width: fullWidth ? '100%' : undefined,
+        ...style,
+      }}
     >
       {loading ? (
-        <span className="nexloan-btn__spinner" aria-label="Loading" />
+        <span
+          style={{
+            width: '16px',
+            height: '16px',
+            border: '2px solid rgba(255,255,255,0.3)',
+            borderTopColor: '#fff',
+            borderRadius: '50%',
+            animation: 'spin 600ms linear infinite',
+            display: 'inline-block',
+          }}
+        />
       ) : (
         children
       )}
-
       <style jsx>{`
-        .nexloan-btn {
-          position: relative;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: var(--space-2);
-          font-family: var(--font-body);
-          font-weight: 600;
-          letter-spacing: 0.01em;
-          border: none;
-          border-radius: var(--radius-md);
-          cursor: pointer;
-          transition: all var(--transition-fast);
-          white-space: nowrap;
-          user-select: none;
-          -webkit-tap-highlight-color: transparent;
-        }
-
-        .nexloan-btn:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-          transform: none !important;
-          box-shadow: none !important;
-        }
-
-        /* ── Sizes ───────────────────────── */
-        .nexloan-btn--sm {
-          padding: 7px 14px;
-          font-size: var(--text-sm);
-        }
-        .nexloan-btn--md {
-          padding: 10px 20px;
-          font-size: var(--text-base);
-        }
-        .nexloan-btn--lg {
-          padding: 14px 28px;
-          font-size: var(--text-base);
-        }
-
-        /* ── Full width ──────────────────── */
-        .nexloan-btn--full {
-          width: 100%;
-        }
-
-        /* ── Primary ─────────────────────── */
-        .nexloan-btn--primary {
-          background: var(--btn-primary-bg);
-          color: var(--btn-primary-text);
-        }
         .nexloan-btn--primary:hover:not(:disabled) {
-          background: var(--btn-primary-bg-hover);
           transform: translateY(-1px);
           box-shadow: var(--shadow-accent);
+          background: var(--accent-400) !important;
         }
         .nexloan-btn--primary:active:not(:disabled) {
           transform: translateY(0) scale(0.98);
-          box-shadow: none;
-        }
-
-        /* ── Secondary ───────────────────── */
-        .nexloan-btn--secondary {
-          background: var(--btn-secondary-bg);
-          color: var(--btn-secondary-text);
-          border: 1px solid var(--btn-secondary-border);
         }
         .nexloan-btn--secondary:hover:not(:disabled) {
-          border-color: var(--accent-400);
-          color: var(--accent-400);
-        }
-        .nexloan-btn--secondary:active:not(:disabled) {
-          transform: translateY(0) scale(0.98);
-        }
-
-        /* ── Ghost ────────────────────────── */
-        .nexloan-btn--ghost {
-          background: transparent;
-          color: var(--btn-ghost-text);
+          border-color: var(--accent-400) !important;
+          color: var(--accent-400) !important;
         }
         .nexloan-btn--ghost:hover:not(:disabled) {
-          color: var(--text-primary);
-          background: var(--surface-border);
-        }
-        .nexloan-btn--ghost:active:not(:disabled) {
-          transform: translateY(0) scale(0.98);
-        }
-
-        /* ── Destructive ─────────────────── */
-        .nexloan-btn--destructive {
-          background: var(--color-error);
-          color: var(--neutral-0);
+          color: var(--text-primary) !important;
         }
         .nexloan-btn--destructive:hover:not(:disabled) {
-          background: #DC2626;
-          transform: translateY(-1px);
-          box-shadow: 0 0 24px rgba(239, 68, 68, 0.25);
+          background: rgba(239,68,68,0.08) !important;
         }
-        .nexloan-btn--destructive:active:not(:disabled) {
-          transform: translateY(0) scale(0.98);
-          box-shadow: none;
-        }
-
-        /* ── Spinner ─────────────────────── */
-        .nexloan-btn__spinner {
-          display: inline-block;
-          width: 18px;
-          height: 18px;
-          border: 2px solid rgba(255, 255, 255, 0.3);
-          border-top-color: currentColor;
-          border-radius: 50%;
-          animation: spin 600ms linear infinite;
-        }
-
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
       `}</style>
     </button>
-  );
+  )
 }

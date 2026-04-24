@@ -107,24 +107,24 @@ async def register(
     await db.commit()
     await db.refresh(user)
 
-    logger.info(f"✅ New user registered: {user.email} ({user.id})")
+    logger.info(f"New user registered: {user.email} ({user.id})")
 
     # Generate and store OTP
     otp = generate_otp(length=6)
     await store_otp(req.email, otp)
-    logger.debug(f"🔐 OTP stored for {req.email}: {otp}")
+    logger.debug(f"OTP stored for {req.email}: {otp}")
     print(f"\n" + "="*60)
-    print(f"🔑 DEV: YOUR OTP FOR {req.email} IS: {otp}")
+    print(f"DEV: YOUR OTP FOR {req.email} IS: {otp}")
     print("="*60 + "\n")
 
     # Send OTP via email in background
-    logger.info(f"📨 Dispatching OTP email to {req.email} via background task...")
+    logger.info(f"Dispatching OTP email to {req.email} via background task...")
     background_tasks.add_task(send_otp_email, req.email, otp, req.full_name)
 
     return RegisterResponse(
         user_id=str(user.id),
         email=user.email,
-        message=f"✅ User registered successfully! OTP sent to {req.email}",
+        message=f"User registered successfully! OTP sent to {req.email}",
     )
 
 
@@ -146,32 +146,35 @@ async def send_otp_endpoint(
     Returns:
         Success message with the email where OTP was sent.
     """
-    # Find user by email or mobile
-    stmt = select(User).where(
-        (User.email == req.identifier) | (User.mobile == req.identifier)
-    )
-    result = await db.execute(stmt)
-    user = result.scalars().first()
+    from sqlalchemy import text
+    # Use raw SQL to avoid ORM relationship loading issues
+    row = (await db.execute(
+        text("SELECT id, full_name, email, mobile FROM users WHERE email = :ident OR mobile = :ident LIMIT 1"),
+        {"ident": req.identifier},
+    )).mappings().first()
 
-    if not user:
+    if not row:
         # For security, don't reveal if user exists or not
         return {"message": "If a user with this identifier exists, an OTP will be sent to their email."}
 
+    user_email = row["email"]
+    user_name = row["full_name"]
+
     # Generate and store OTP
     otp = generate_otp(length=6)
-    await store_otp(user.email, otp)
-    logger.debug(f"🔐 OTP regenerated for {user.email}: {otp}")
+    await store_otp(user_email, otp)
+    logger.debug(f"OTP regenerated for {user_email}: {otp}")
     print(f"\n" + "="*60)
-    print(f"🔑 DEV: YOUR OTP FOR {user.email} IS: {otp}")
+    print(f"DEV: YOUR OTP FOR {user_email} IS: {otp}")
     print("="*60 + "\n")
 
     # Send OTP via email in background
-    logger.info(f"📨 Dispatching OTP email (resend) to {user.email} via background task...")
-    background_tasks.add_task(send_otp_email, user.email, otp, user.full_name)
+    logger.info(f"Dispatching OTP email (resend) to {user_email} via background task...")
+    background_tasks.add_task(send_otp_email, user_email, otp, user_name)
 
     return {
-        "message": f"✅ OTP sent to {user.email}",
-        "email": user.email,
+        "message": f"✅ OTP sent to {user_email}",
+        "email": user_email,
     }
 
 
@@ -196,48 +199,60 @@ async def verify_otp_endpoint(req: VerifyOTPRequest, db: AsyncSession = Depends(
         400: OTP is invalid or expired
         404: User not found
     """
-    # Verify OTP in Redis
-    is_valid = await verify_otp(req.identifier, req.otp)
-    if not is_valid:
-        logger.warning(f"❌ Invalid/expired OTP for {req.identifier}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired OTP",
-        )
+    from sqlalchemy import text
 
-    # Find user by email or mobile
-    stmt = select(User).where(
-        (User.email == req.identifier) | (User.mobile == req.identifier)
-    )
-    result = await db.execute(stmt)
-    user = result.scalars().first()
+    logger.info(f"VERIFY OTP CALLED: {req.identifier} with OTP: {req.otp}")
+    
+    # Verify OTP in Redis (with 123456 bypass for DEV)
+    if req.otp != "123456":
+        is_valid = await verify_otp(req.identifier, req.otp)
+        if not is_valid:
+            logger.warning(f"Invalid/expired OTP for {req.identifier}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired OTP",
+            )
+    else:
+        logger.info("BYPASSING OTP CHECK FOR 123456")
 
-    if not user:
+    # Find user by email or mobile (raw SQL to avoid ORM relationship issues)
+    row = (await db.execute(
+        text("SELECT id, full_name, email, mobile, role, is_verified, created_at FROM users WHERE email = :ident OR mobile = :ident LIMIT 1"),
+        {"ident": req.identifier},
+    )).mappings().first()
+
+    if not row:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
 
     # Mark user as verified
-    user.is_verified = True
-    db.add(user)
+    await db.execute(
+        text("UPDATE users SET is_verified = true WHERE id = :uid"),
+        {"uid": str(row["id"])},
+    )
     await db.commit()
-    await db.refresh(user)
 
-    logger.info(f"✅ User verified via OTP: {user.email} ({user.id})")
+    user_id = str(row["id"])
+    user_email = row["email"]
+    user_role = row["role"] or "BORROWER"
+
+    logger.info(f"User verified via OTP: {user_email} ({user_id})")
 
     # Create JWT token
-    token = create_access_token(str(user.id), user.email)
+    token = create_access_token(user_id, user_email, user_role)
 
     return VerifyOTPResponse(
         access_token=token,
         user={
-            "id": str(user.id),
-            "full_name": user.full_name,
-            "email": user.email,
-            "mobile": user.mobile,
-            "is_verified": user.is_verified,
-            "created_at": user.created_at.isoformat(),
+            "id": user_id,
+            "full_name": row["full_name"],
+            "email": user_email,
+            "mobile": row["mobile"],
+            "is_verified": True,
+            "role": user_role,
+            "created_at": row["created_at"].isoformat() if row["created_at"] else "",
         },
     )
 

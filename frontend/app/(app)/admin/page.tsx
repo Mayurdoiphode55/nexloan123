@@ -1,23 +1,40 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { 
-  getKYCQueue, 
-  approveKYC, 
-  rejectKYC, 
-  KYCQueueItem, 
-  getAdminAnalytics, 
-  AnalyticsResponse 
-} from "@/lib/api";
+import { adminAPI } from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
-import { SkeletonCard, SkeletonText } from "@/components/ui/Skeleton";
+import Skeleton from "@/components/ui/Skeleton";
+import { SkeletonCard, SkeletonText } from "@/components/SkeletonLoader";
+
+interface KYCQueueItem {
+  loan_id: string;
+  loan_number: string;
+  applicant_name: string;
+  applicant_email: string;
+  loan_amount: number;
+  tenure_months: number;
+  purpose: string | null;
+  created_at: string;
+  pan_doc_url: string | null;
+  pan_name_extracted: string | null;
+  pan_legible: boolean | null;
+  aadhaar_doc_url: string | null;
+  aadhaar_name_extracted: string | null;
+  aadhaar_legible: boolean | null;
+  aadhaar_photo_present: boolean | null;
+  ai_verdict: string | null;
+  ai_remarks: string | null;
+  ai_raw_response: any;
+}
+
+import type { AdminMetrics } from "@/types/loan";
 
 export default function AdminPage() {
   const [queue, setQueue] = useState<KYCQueueItem[]>([]);
-  const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
+  const [analytics, setAnalytics] = useState<AdminMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedLoan, setExpandedLoan] = useState<string | null>(null);
@@ -29,11 +46,11 @@ export default function AdminPage() {
       setLoading(true);
       setError(null);
       const [queueData, analyticsData] = await Promise.all([
-        getKYCQueue(),
-        getAdminAnalytics(),
+        adminAPI.getKYCQueue(),
+        adminAPI.getMetrics(),
       ]);
-      setQueue(queueData);
-      setAnalytics(analyticsData);
+      setQueue(queueData.data || []);
+      setAnalytics(analyticsData.data as any);
     } catch (err: unknown) {
       console.error("Failed to load admin data", err);
       setError("Failed to load dashboard data. Make sure the backend is running.");
@@ -49,7 +66,7 @@ export default function AdminPage() {
   const handleApprove = async (loanId: string, loanNumber: string) => {
     try {
       setProcessingMap((prev) => ({ ...prev, [loanId]: "approving" }));
-      await approveKYC(loanId);
+      await adminAPI.approveKYC(loanId);
       showToast(`✅ ${loanNumber} approved — ready for underwriting`, "success");
       setQueue((prev) => prev.filter((item) => item.loan_id !== loanId));
     } catch (err) {
@@ -68,7 +85,7 @@ export default function AdminPage() {
     if (!confirm(`Are you sure you want to reject KYC for ${loanNumber}? This cannot be undone.`)) return;
     try {
       setProcessingMap((prev) => ({ ...prev, [loanId]: "rejecting" }));
-      await rejectKYC(loanId);
+      await adminAPI.rejectKYC(loanId);
       showToast(`❌ ${loanNumber} rejected`, "error");
       setQueue((prev) => prev.filter((item) => item.loan_id !== loanId));
     } catch (err) {
@@ -193,7 +210,7 @@ export default function AdminPage() {
               const processing = processingMap[item.loan_id];
 
               return (
-                <Card key={item.loan_id} className="queue-item" padding="default" variant={isExpanded ? "elevated" : "default"}>
+                <Card key={item.loan_id} className="queue-item" padding="md" variant={isExpanded ? "elevated" : "default"}>
                   <div className="queue-item__header">
                     <div className="queue-item__info cursor-pointer" onClick={() => toggleExpand(item.loan_id)}>
                       <div className="flex items-center gap-3">
@@ -286,6 +303,73 @@ export default function AdminPage() {
                              <span className="text-secondary">Extracted:</span> <span className="font-bold">{item.aadhaar_name_extracted || "Wait..."}</span>
                            </div>
                         </div>
+                      </div>
+
+                      <div className="mt-6 pt-4 border-t border-surface-border">
+                        <h4 className="label-caps mb-3 text-accent flex items-center gap-2">
+                          <span className="text-xl">🤖</span> Detailed AI Analysis
+                        </h4>
+                        
+                        {item.ai_raw_response ? (
+                          <div className="space-y-6">
+                            {/* Narrative Report Wrapper */}
+                            <div className="bg-surface-sunken p-1">
+                              <div className="px-4 py-2 bg-surface-base/50 flex items-center justify-between">
+                                <span className="text-[10px] font-bold uppercase tracking-widest text-tertiary">AI Auditor Narrative Report</span>
+                                <Badge variant={item.ai_verdict === "PASS" ? "success" : "error"}>
+                                  {item.ai_verdict || "REVIEW"}
+                                </Badge>
+                              </div>
+                              <div className="p-6">
+                                <div className="prose prose-invert max-w-none text-secondary text-sm leading-relaxed">
+                                  {/* Renders the markdown-like narrative reason */}
+                                  <div className="whitespace-pre-wrap font-medium text-base text-primary mb-4">
+                                    {(item.ai_remarks || item.ai_raw_response?.reason || "Analysis complete. Waiting for manual validation.")
+                                      .split('\n').map((line: string, i: number) => (
+                                        <p key={i} className={line.startsWith('###') ? 'text-lg font-bold text-accent mt-2 mb-1' : 'mb-2'}>
+                                          {line.replace('###', '').replace(/\*\*/g, '')}
+                                        </p>
+                                      ))
+                                    }
+                                  </div>
+                                  
+                                  <div className="mt-6 pt-6 border-t border-surface-border grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    <div className="space-y-2">
+                                      <p className="text-[10px] font-bold uppercase text-tertiary">Extraction Audit</p>
+                                      <ul className="space-y-1 text-xs list-none p-0">
+                                        <li className="flex justify-between">
+                                           <span>Document Type:</span>
+                                           <span className="font-bold text-accent">{item.pan_doc_url ? "PAN" : "Card"} + Aadhaar</span>
+                                        </li>
+                                        <li className="flex justify-between">
+                                           <span>Name on Card:</span>
+                                           <span className="font-bold text-info">{item.pan_name_extracted || item.aadhaar_name_extracted || "Unreadable"}</span>
+                                        </li>
+                                        <li className="flex justify-between">
+                                           <span>Applicant Name:</span>
+                                           <span className="font-bold">{item.applicant_name}</span>
+                                        </li>
+                                      </ul>
+                                    </div>
+                                    <div className="space-y-2">
+                                      <p className="text-[10px] font-bold uppercase text-tertiary">System Logic</p>
+                                      <p className="text-[11px] italic text-tertiary">
+                                        Using LayoutLMv3 Document Understanding. 
+                                        {item.ai_raw_response?.name_match === false 
+                                          ? " Logic flagged a fundamental mismatch between applicant profile and extracted document strings." 
+                                          : " Logic confirmed structural and lexical match across provided documentation."}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-center p-4 bg-surface-sunken rounded-lg text-tertiary italic text-sm">
+                            Extended AI metrics not available for this record.
+                          </div>
+                        )}
                       </div>
 
                       <div className="mt-6 pt-4 border-t border-surface-border">

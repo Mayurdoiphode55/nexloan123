@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import DocumentScanner3D from "@/components/3d/DocumentScanner3D";
+import dynamic from 'next/dynamic';
+const DocumentScanner3D = dynamic(() => import('@/components/3d/DocumentScanner3D'), { ssr: false });
 
 interface KYCUploadProps {
   label: string;

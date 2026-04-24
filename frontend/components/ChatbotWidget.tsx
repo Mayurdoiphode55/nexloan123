@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { newSession, sendChatMessage } from "@/lib/api";
-import AIOrbAvatar from "@/components/3d/AIOrbAvatar";
+import { chatAPI } from "@/lib/api";
+import dynamic from 'next/dynamic';
+const AIOrbAvatar = dynamic(() => import('@/components/3d/AIOrbAvatar'), { ssr: false });
 
 type Message = { role: "user" | "bot"; content: string; };
 type ChatSize = "default" | "large" | "fullscreen";
@@ -21,8 +22,8 @@ export default function ChatbotWidget() {
     let storedSid = sessionStorage.getItem("nexloan_chat_session");
     if (!storedSid) {
       try {
-        const res = await newSession();
-        storedSid = res.session_id;
+        const res = await chatAPI.newSession();
+        storedSid = res.data.session_id;
         sessionStorage.setItem("nexloan_chat_session", storedSid as string);
       } catch (err) {
         console.error("Failed to start chat session", err);
@@ -53,9 +54,9 @@ export default function ChatbotWidget() {
     setIsTyping(false);
     setInput("");
     try {
-      const res = await newSession();
-      sessionStorage.setItem("nexloan_chat_session", res.session_id);
-      setSessionId(res.session_id);
+      const res = await chatAPI.newSession();
+      sessionStorage.setItem("nexloan_chat_session", res.data.session_id);
+      setSessionId(res.data.session_id);
       setMessages([{ role: "bot", content: "Session refreshed! How can I help you today?" }]);
     } catch (err) {
       setMessages([{ role: "bot", content: "Failed to refresh session." }]);
@@ -75,10 +76,10 @@ export default function ChatbotWidget() {
     setMessages(prev => [...prev, { role: "user", content: userText }]);
     setIsTyping(true);
     try {
-      const res = await sendChatMessage(sessionId, userText);
+      const res = await chatAPI.sendMessage({ session_id: sessionId, message: userText });
       setIsTyping(false);
-      setIsAuthenticating(res.action === "REQUEST_LOGIN");
-      setMessages(prev => [...prev, { role: "bot", content: res.reply }]);
+      setIsAuthenticating(res.data.action === "REQUEST_LOGIN");
+      setMessages(prev => [...prev, { role: "bot", content: res.data.reply }]);
     } catch (err) {
       setIsTyping(false);
       setMessages(prev => [...prev, { role: "bot", content: "Sorry, I had trouble connecting." }]);

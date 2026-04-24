@@ -14,6 +14,7 @@ from app.utils.database import get_db
 from app.utils.auth import get_current_user
 from app.models.loan import User, Loan, LoanStatus, EMISchedule, AuditLog
 from app.services.emi_engine import generate_amortization_schedule
+from app.services.milestone_service import advance_milestone
 
 logger = logging.getLogger("nexloan.disbursement")
 
@@ -97,6 +98,12 @@ async def disburse_loan(
     db.add(audit)
     
     await db.commit()
+
+    # Advance milestones: disbursed + active
+    await advance_milestone(loan_id, "DISBURSED", db)
+    await advance_milestone(loan_id, "ACTIVE", db)
+    await db.commit()
+
     logger.info(f"💸 Loan {loan.loan_number} disbursed successfully. {len(emi_objects)} EMIs created.")
     
     return DisburseResponse(

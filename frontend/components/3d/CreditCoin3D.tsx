@@ -8,10 +8,13 @@ import * as THREE from "three";
 function Coin() {
   const meshRef = useRef<THREE.Mesh>(null);
 
+  const time = useRef(0);
+
   useFrame((state, delta) => {
+    time.current += delta;
     if (meshRef.current) {
       meshRef.current.rotation.y += delta * 1.5; // fast spin
-      meshRef.current.rotation.z = Math.sin(state.clock.elapsedTime) * 0.2;
+      meshRef.current.rotation.z = Math.sin(time.current) * 0.2;
     }
   });
 
