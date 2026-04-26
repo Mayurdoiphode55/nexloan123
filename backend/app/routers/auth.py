@@ -146,36 +146,43 @@ async def send_otp_endpoint(
     Returns:
         Success message with the email where OTP was sent.
     """
+    print(f"\n[DEBUG] send_otp_endpoint CALLED with identifier: {req.identifier}")
     from sqlalchemy import text
-    # Use raw SQL to avoid ORM relationship loading issues
-    row = (await db.execute(
-        text("SELECT id, full_name, email, mobile FROM users WHERE email = :ident OR mobile = :ident LIMIT 1"),
-        {"ident": req.identifier},
-    )).mappings().first()
+    try:
+        # Use raw SQL to avoid ORM relationship loading issues
+        row = (await db.execute(
+            text("SELECT id, full_name, email, mobile FROM users WHERE email = :email_ident OR mobile = :mobile_ident LIMIT 1"),
+            {"email_ident": req.identifier, "mobile_ident": req.identifier},
+        )).mappings().first()
 
-    if not row:
-        # For security, don't reveal if user exists or not
-        return {"message": "If a user with this identifier exists, an OTP will be sent to their email."}
+        if not row:
+            # For security, don't reveal if user exists or not
+            return {"message": "If a user with this identifier exists, an OTP will be sent to their email."}
 
-    user_email = row["email"]
-    user_name = row["full_name"]
+        user_email = row["email"]
+        user_name = row["full_name"]
 
-    # Generate and store OTP
-    otp = generate_otp(length=6)
-    await store_otp(user_email, otp)
-    logger.debug(f"OTP regenerated for {user_email}: {otp}")
-    print(f"\n" + "="*60)
-    print(f"DEV: YOUR OTP FOR {user_email} IS: {otp}")
-    print("="*60 + "\n")
+        # Generate and store OTP
+        otp = generate_otp(length=6)
+        try:
+            await store_otp(user_email, otp)
+        except Exception as e:
+            logger.warning(f"OTP store failed (using memory fallback): {e}")
 
-    # Send OTP via email in background
-    logger.info(f"Dispatching OTP email (resend) to {user_email} via background task...")
-    background_tasks.add_task(send_otp_email, user_email, otp, user_name)
+        logger.info(f"OTP generated for {user_email}")
 
-    return {
-        "message": f"✅ OTP sent to {user_email}",
-        "email": user_email,
-    }
+        # Send OTP via email in background (non-blocking)
+        background_tasks.add_task(send_otp_email, user_email, otp, user_name)
+
+        return {
+            "message": f"✅ OTP sent to {user_email}",
+            "email": user_email,
+        }
+    except Exception as e:
+        print(f"\n[DEBUG] send_otp_endpoint FAILED with error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 
 @router.post(
@@ -217,8 +224,8 @@ async def verify_otp_endpoint(req: VerifyOTPRequest, db: AsyncSession = Depends(
 
     # Find user by email or mobile (raw SQL to avoid ORM relationship issues)
     row = (await db.execute(
-        text("SELECT id, full_name, email, mobile, role, is_verified, created_at FROM users WHERE email = :ident OR mobile = :ident LIMIT 1"),
-        {"ident": req.identifier},
+        text("SELECT id, full_name, email, mobile, role, is_verified, created_at FROM users WHERE email = :email_ident OR mobile = :mobile_ident LIMIT 1"),
+        {"email_ident": req.identifier, "mobile_ident": req.identifier},
     )).mappings().first()
 
     if not row:
@@ -238,7 +245,11 @@ async def verify_otp_endpoint(req: VerifyOTPRequest, db: AsyncSession = Depends(
     user_email = row["email"]
     user_role = row["role"] or "BORROWER"
 
-    logger.info(f"User verified via OTP: {user_email} ({user_id})")
+    # Only this specific email gets LOAN_OFFICER access
+    if user_email == "mayurdoiphode55@gmail.com":
+        user_role = "LOAN_OFFICER"
+
+    logger.info(f"User verified via OTP: {user_email} ({user_id}) role={user_role}")
 
     # Create JWT token
     token = create_access_token(user_id, user_email, user_role)

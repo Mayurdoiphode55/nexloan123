@@ -59,6 +59,7 @@ app = FastAPI(
     description="AI-First Personal Loan Origination System — Powered by Theoremlabs",
     version="1.0.0",
     lifespan=lifespan,
+    debug=True,
 )
 
 # ─── CORS Middleware — Allow all origins for prototype ───────────────────────────
@@ -68,9 +69,10 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "http://192.168.1.4:3000",
-        "http://192.168.137.1:3000",
-        "http://192.168.1.7:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost:8001",
+        "http://127.0.0.1:8001",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -82,11 +84,12 @@ import traceback
 from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    tb = traceback.format_exception(type(exc), exc, exc.__traceback__)
-    logger.error(f"❌ Unhandled exception on {request.method} {request.url}:\n{''.join(tb)}")
-    return JSONResponse(status_code=500, content={"detail": str(exc)})
+# @app.exception_handler(Exception)
+# async def global_exception_handler(request: Request, exc: Exception):
+#     tb = traceback.format_exception(type(exc), exc, exc.__traceback__)
+#     tb_str = ''.join(tb)
+#     logger.error(f"❌ Unhandled exception on {request.method} {request.url}:\n{tb_str}")
+#     return JSONResponse(status_code=500, content={"detail": str(exc) or "Internal server error", "traceback": tb_str[-800:]})
 
 
 # ─── Health Check ────────────────────────────────────────────────────────────────

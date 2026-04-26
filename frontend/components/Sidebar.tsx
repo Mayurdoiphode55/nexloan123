@@ -34,8 +34,8 @@ export default function Sidebar() {
   // Build navigation links based on role
   const navLinks: { name: string; path: string; icon: string }[] = [];
 
-  // BORROWER links
-  if (userRole === "BORROWER") {
+  // BORROWER links (also visible to LOAN_OFFICER so they can test everything)
+  if (userRole === "BORROWER" || userRole === "LOAN_OFFICER") {
     navLinks.push(
       { name: "My Dashboard", path: "/dashboard", icon: "dashboard" },
       { name: "Track Loan", path: "/track", icon: "track" },
@@ -43,19 +43,17 @@ export default function Sidebar() {
     );
   }
 
-  // LOAN_OFFICER links
+  // LOAN_OFFICER-only links
   if (userRole === "LOAN_OFFICER") {
     navLinks.push(
-      { name: "My Queue", path: "/officer", icon: "queue" },
-      { name: "All Loans", path: "/officer/loans", icon: "dashboard" },
+      { name: "Officer Queue", path: "/officer", icon: "queue" },
     );
   }
 
   // ADMIN links
-  if (userRole === "ADMIN" || userRole === "SUPER_ADMIN") {
+  if (userRole === "ADMIN" || userRole === "SUPER_ADMIN" || userRole === "LOAN_OFFICER") {
     navLinks.push(
       { name: "Admin Panel", path: "/admin", icon: "admin" },
-      { name: "User Management", path: "/admin/users", icon: "users" },
     );
   }
 

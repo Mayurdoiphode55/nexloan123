@@ -1,16 +1,30 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
-
-// DEV: Token is injected synchronously by the inline script in app/layout.tsx.
-// No auth checks needed here — just render the layout immediately.
 
 export default function AppLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const router = useRouter();
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    // Check if user is authenticated
+    const token = localStorage.getItem("nexloan_token");
+    const user = localStorage.getItem("nexloan_user");
+    if (!token || !user) {
+      router.push("/auth");
+      return;
+    }
+    setIsReady(true);
+  }, [router]);
+
+  if (!isReady) return null; // Don't render until auth is confirmed
+
   return (
     <div className="app-layout">
       <Sidebar />
@@ -39,7 +53,7 @@ export default function AppLayout({
         @media (max-width: 640px) {
           .app-layout__main {
             padding: var(--space-4);
-            padding-bottom: 100px; /* Safe space for bottom nav + browser bars */
+            padding-bottom: 100px;
           }
         }
       `}</style>

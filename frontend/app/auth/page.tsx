@@ -19,9 +19,13 @@ export default function AuthPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // DEV BYPASS: Immediately redirect to dashboard, skipping auth completely
+  // If already authenticated, go to dashboard
   useEffect(() => {
-    router.push('/dashboard');
+    const token = localStorage.getItem('nexloan_token');
+    const user = localStorage.getItem('nexloan_user');
+    if (token && user) {
+      router.push('/dashboard');
+    }
   }, [router]);
 
   // Form states
@@ -79,15 +83,14 @@ export default function AuthPage() {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) throw new Error('Invalid email format');
       if (!formData.mobile.match(/^\d{10}$/)) throw new Error('Mobile number must be 10 digits');
 
-      const response = await register(formData);
+      await register(formData);
       
-      // DEV BYPASS: Directly verify with bypass OTP
-      const res = await verifyOTP({ identifier: formData.email, otp: '123456' });
-      storeToken(res.data.access_token);
-      storeUser(res.data.user);
-      
-      setSuccess('Registered and logged in! Redirecting...');
-      setTimeout(() => router.push('/dashboard'), 500);
+      // Registration successful — OTP was sent, move to OTP step
+      setOtpIdentifier(formData.email);
+      setOtpTimer(300);
+      setCanResend(false);
+      setSuccess(`OTP sent to ${formData.email}. Enter 123456 for dev testing.`);
+      setStep(2);
     } catch (err: any) {
       const d = err.response?.data?.detail; setError(typeof d === 'string' ? d : Array.isArray(d) ? d.map((e: any) => e.msg || JSON.stringify(e)).join(', ') : err.message || 'Registration failed');
     } finally {
@@ -103,13 +106,15 @@ export default function AuthPage() {
 
     try {
       if (!loginIdentifier.trim()) throw new Error('Email or mobile is required');
-      // DEV BYPASS: Directly call verifyOTP instead of sendOTP
-      const res = await verifyOTP({ identifier: loginIdentifier, otp: '123456' });
-      storeToken(res.data.access_token);
-      storeUser(res.data.user);
+      const res = await sendOTP({ identifier: loginIdentifier });
       
-      setSuccess('Logged in automatically! Redirecting...');
-      setTimeout(() => router.push('/dashboard'), 500);
+      setOtpIdentifier(loginIdentifier);
+      setOtpTimer(300);
+      setCanResend(false);
+
+      const email = res.data?.email || loginIdentifier;
+      setSuccess(`OTP sent to ${email}. Please check your inbox.`);
+      setStep(2);
     } catch (err: any) {
       const d = err.response?.data?.detail; setError(typeof d === 'string' ? d : Array.isArray(d) ? d.map((e: any) => e.msg || JSON.stringify(e)).join(', ') : err.message || 'Login failed');
     } finally {

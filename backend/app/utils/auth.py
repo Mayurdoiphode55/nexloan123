@@ -20,8 +20,8 @@ from app.config import settings
 from app.models.loan import User
 from app.utils.database import get_db
 
-# HTTP Bearer token scheme — auto_error=False prevents 401 before our code runs
-security = HTTPBearer(auto_error=False)
+# HTTP Bearer token scheme — auto_error=True ensures 401 if no token
+security = HTTPBearer(auto_error=True)
 
 
 def generate_otp(length: int = 6) -> str:
@@ -71,8 +71,12 @@ def decode_token(token: str) -> dict:
         )
 
 
+# The ONE officer email — only this account gets LOAN_OFFICER privileges
+OFFICER_EMAIL = "mayurdoiphode55@gmail.com"
+
+
 async def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db),
 ) -> User:
     """
@@ -84,15 +88,7 @@ async def get_current_user(
         async def protected_route(user: User = Depends(get_current_user)):
             ...
     """
-    # DEV BYPASS: if credentials is None or token matches bypass, look up dev user directly
-    if credentials is None or credentials.credentials == "dev_token_bypass":
-        result = await db.execute(select(User).where(User.email == "mayurdoiphode55@gmail.com"))
-        user = result.scalar_one_or_none()
-        if user is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dev user not found")
-        return user
-
-    # Normal JWT path
+    # Decode and validate the JWT
     payload = decode_token(credentials.credentials)
     user_id = payload.get("sub")
 
@@ -124,8 +120,8 @@ async def get_current_user(
             detail="Account has been deactivated",
         )
 
-    if user.email == "mayurdoiphode55@gmail.com":
-        # DEV BYPASS: Force role to LOAN_OFFICER to allow testing admin/officer features
+    # RBAC: Only this specific email gets LOAN_OFFICER role
+    if user.email == OFFICER_EMAIL:
         user.role = "LOAN_OFFICER"
 
     return user
