@@ -135,3 +135,150 @@ async def get_document_statuses(
             for doc in docs
         ],
     }
+
+
+# ─── Timeline Endpoint (for LoanTimeline component) ─────────────────────────
+
+# Ordered milestones with which status marks them as complete
+MILESTONE_DEFS = [
+    {"key": "inquiry_created", "label": "Inquiry Created", "after_status": "INQUIRY"},
+    {"key": "kyc_uploaded", "label": "KYC Documents Uploaded", "after_status": "KYC_PENDING"},
+    {"key": "kyc_verified", "label": "AI KYC Verification", "after_status": "KYC_VERIFIED"},
+    {"key": "underwriting", "label": "Credit Assessment", "after_status": "UNDERWRITING"},
+    {"key": "decision", "label": "Loan Decision", "after_status": "APPROVED"},
+    {"key": "disbursed", "label": "Disbursement", "after_status": "DISBURSED"},
+    {"key": "repayment", "label": "Repayment Started", "after_status": "ACTIVE"},
+    {"key": "closed", "label": "Loan Closed", "after_status": "CLOSED"},
+]
+
+STATUS_ORDER = [
+    "INQUIRY", "APPLICATION", "KYC_PENDING", "KYC_VERIFIED", "UNDERWRITING",
+    "APPROVED", "COUNTER_OFFERED", "REJECTED", "DISBURSED", "ACTIVE",
+    "PRE_CLOSED", "CLOSED"
+]
+
+
+@router.get(
+    "/{loan_id}/timeline",
+    summary="Get visual milestone timeline for the loan tracker UI",
+)
+async def get_timeline(
+    loan_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Returns a milestone timeline suitable for the LoanTimeline component.
+    Maps the loan's current status to a visual progress tracker.
+    """
+    from sqlalchemy import text
+
+    user_id = str(current_user["id"]) if isinstance(current_user, dict) else str(current_user.id)
+    user_role = current_user.get("role", "BORROWER") if isinstance(current_user, dict) else getattr(current_user, "role", "BORROWER")
+
+    # Fetch loan
+    if user_role == "BORROWER":
+        row = (await db.execute(text(
+            "SELECT id, loan_number, status, credit_score, approved_amount, interest_rate, "
+            "emi_amount, created_at, updated_at, disbursed_at, closed_at "
+            "FROM loans WHERE id = :lid AND user_id = :uid"
+        ), {"lid": loan_id, "uid": user_id})).mappings().first()
+    else:
+        row = (await db.execute(text(
+            "SELECT id, loan_number, status, credit_score, approved_amount, interest_rate, "
+            "emi_amount, created_at, updated_at, disbursed_at, closed_at "
+            "FROM loans WHERE id = :lid"
+        ), {"lid": loan_id})).mappings().first()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Loan not found")
+
+    current_status = row["status"]
+    if hasattr(current_status, "value"):
+        current_status = current_status.value
+
+    current_idx = STATUS_ORDER.index(current_status) if current_status in STATUS_ORDER else 0
+
+    # Get audit log timestamps
+    audit_rows = (await db.execute(text(
+        "SELECT action, to_status, created_at FROM audit_logs WHERE loan_id = :lid ORDER BY created_at ASC"
+    ), {"lid": loan_id})).mappings().all()
+
+    status_timestamps = {}
+    for a in audit_rows:
+        ts = a.get("to_status") or a.get("action", "")
+        if ts and ts not in status_timestamps:
+            status_timestamps[ts] = a["created_at"]
+
+    # Check for first paid EMI
+    first_paid = (await db.execute(text(
+        "SELECT paid_at FROM emi_schedule WHERE loan_id = :lid AND status = 'PAID' ORDER BY installment_no LIMIT 1"
+    ), {"lid": loan_id})).mappings().first()
+
+    # Get next unpaid EMI for estimated date
+    next_emi = (await db.execute(text(
+        "SELECT due_date FROM emi_schedule WHERE loan_id = :lid AND status = 'PENDING' ORDER BY installment_no LIMIT 1"
+    ), {"lid": loan_id})).mappings().first()
+
+    # Build milestones
+    milestones = []
+    for mdef in MILESTONE_DEFS:
+        ms_status_idx = STATUS_ORDER.index(mdef["after_status"]) if mdef["after_status"] in STATUS_ORDER else 99
+
+        # Handle special cases
+        if mdef["key"] == "decision" and current_status in ("REJECTED", "COUNTER_OFFERED"):
+            ms_status_idx = current_idx  # mark as completed
+
+        if ms_status_idx < current_idx or (ms_status_idx == current_idx and mdef["after_status"] == current_status):
+            status = "completed"
+        elif ms_status_idx == current_idx + 1 or (ms_status_idx == current_idx and mdef["after_status"] != current_status):
+            status = "current"
+        else:
+            status = "upcoming"
+
+        # Get timestamp
+        ts = status_timestamps.get(mdef["after_status"])
+        if mdef["key"] == "inquiry_created":
+            ts = ts or row["created_at"]
+        elif mdef["key"] == "disbursed" and row.get("disbursed_at"):
+            ts = row["disbursed_at"]
+        elif mdef["key"] == "repayment" and first_paid:
+            ts = first_paid["paid_at"]
+        elif mdef["key"] == "closed" and row.get("closed_at"):
+            ts = row["closed_at"]
+
+        # Detail text
+        detail = None
+        if mdef["key"] == "underwriting" and row.get("credit_score") and status == "completed":
+            detail = f"Credit Score: {row['credit_score']}"
+        elif mdef["key"] == "decision" and status == "completed":
+            if current_status == "REJECTED":
+                detail = "Application not approved"
+            elif row.get("approved_amount"):
+                detail = f"₹{row['approved_amount']:,.0f} @ {row.get('interest_rate', 0)}%"
+        elif mdef["key"] == "disbursed" and status == "completed" and row.get("approved_amount"):
+            detail = f"₹{row['approved_amount']:,.0f} disbursed"
+
+        estimated_date = None
+        if mdef["key"] == "repayment" and status == "upcoming" and next_emi:
+            estimated_date = next_emi["due_date"].isoformat() if next_emi["due_date"] else None
+
+        milestones.append({
+            "key": mdef["key"],
+            "label": mdef["label"],
+            "status": status,
+            "timestamp": ts.isoformat() if ts else None,
+            "detail": detail,
+            "estimated_date": estimated_date,
+        })
+
+    # Calculate progress percentage
+    completed_count = sum(1 for m in milestones if m["status"] == "completed")
+    progress = int((completed_count / len(milestones)) * 100)
+
+    return {
+        "loan_id": str(row["id"]),
+        "loan_number": row["loan_number"],
+        "progress_percent": progress,
+        "milestones": milestones,
+    }

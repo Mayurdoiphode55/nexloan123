@@ -176,14 +176,14 @@ class KYCDocument(Base):
 
     # PAN document
     pan_doc_url = Column(String(500), nullable=True)
-    pan_number = Column(String(20), nullable=True)
+    pan_number = Column(String(30), nullable=True)
     pan_name_extracted = Column(String(255), nullable=True)
     pan_legible = Column(Boolean, nullable=True)
     pan_name_match = Column(Boolean, nullable=True)
 
     # Aadhaar document
     aadhaar_doc_url = Column(String(500), nullable=True)
-    aadhaar_number = Column(String(20), nullable=True)
+    aadhaar_number = Column(String(50), nullable=True)
     aadhaar_name_extracted = Column(String(255), nullable=True)
     aadhaar_legible = Column(Boolean, nullable=True)
     aadhaar_photo_present = Column(Boolean, nullable=True)
@@ -492,3 +492,36 @@ class Payment(Base):
     completed_at = Column(DateTime, nullable=True)
 
 
+# ─── Phase 5 Models — Notifications & Callbacks ────────────────────────────────
+
+
+class Notification(Base):
+    """In-app notifications for users — EMI reminders, loan updates, etc."""
+    __tablename__ = "notifications"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    loan_id = Column(UUID(as_uuid=True), ForeignKey("loans.id", ondelete="CASCADE"), nullable=True)
+
+    type = Column(String(50), nullable=False)  # emi_reminder, emi_paid, loan_approved, etc.
+    title = Column(String(200), nullable=False)
+    message = Column(Text, nullable=False)
+    is_read = Column(Boolean, default=False, nullable=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class CallbackRequest(Base):
+    """Callback requests from borrowers — support team calls them back."""
+    __tablename__ = "callback_requests"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    loan_id = Column(UUID(as_uuid=True), ForeignKey("loans.id"), nullable=True)
+
+    phone_number = Column(String(15), nullable=False)
+    preferred_slot = Column(String(50), nullable=False)  # 'morning' | 'afternoon' | 'evening'
+    status = Column(String(20), default="pending", nullable=False)  # pending, scheduled, completed
+    notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

@@ -208,3 +208,104 @@ async def update_ticket_status(
     await db.commit()
 
     return {"ticket_id": str(ticket.id), "new_status": req.status}
+
+
+# ─── Callback Request ───────────────────────────────────────────────────────
+
+SLOT_LABELS = {
+    "morning": "9 AM – 12 PM",
+    "afternoon": "12 PM – 5 PM",
+    "evening": "5 PM – 8 PM",
+}
+
+
+class CallbackRequestBody(BaseModel):
+    phone_number: str = Field(..., min_length=10, max_length=15)
+    preferred_slot: str = Field(..., description="morning, afternoon, or evening")
+    loan_id: Optional[str] = None
+
+
+@router.post("/callback-request")
+async def request_callback(
+    req: CallbackRequestBody,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Request a callback from the support team."""
+    from sqlalchemy import text as sa_text
+
+    if req.preferred_slot not in SLOT_LABELS:
+        raise HTTPException(status_code=400, detail="preferred_slot must be: morning, afternoon, or evening")
+
+    user_id = str(current_user["id"])
+    user_name = current_user.get("full_name", "Customer")
+    user_email = current_user.get("email", "")
+
+    # Save to DB
+    await db.execute(sa_text("""
+        INSERT INTO callback_requests (id, user_id, loan_id, phone_number, preferred_slot, status, created_at)
+        VALUES (gen_random_uuid(), :uid, :lid, :phone, :slot, 'pending', NOW())
+    """), {
+        "uid": user_id,
+        "lid": req.loan_id,
+        "phone": req.phone_number,
+        "slot": req.preferred_slot,
+    })
+
+    # Create in-app notification
+    slot_label = SLOT_LABELS[req.preferred_slot]
+    await db.execute(sa_text("""
+        INSERT INTO notifications (id, user_id, loan_id, type, title, message, is_read, created_at)
+        VALUES (gen_random_uuid(), :uid, :lid, 'callback_scheduled', :title, :message, false, NOW())
+    """), {
+        "uid": user_id,
+        "lid": req.loan_id,
+        "title": f"📞 Callback scheduled — {slot_label}",
+        "message": f"We'll call you between {slot_label} today at {req.phone_number}.",
+    })
+
+    await db.commit()
+
+    # Send Brevo email to support team
+    try:
+        from app.services.email_service import _send_brevo_api_email
+        from app.config import settings
+
+        await _send_brevo_api_email(
+            to_email=settings.EMAIL_FROM,
+            to_name="NexLoan Support",
+            subject=f"📞 Callback Request from {user_name}",
+            html_content=f"""
+            <div style="font-family: Arial; padding: 20px;">
+                <h2>New Callback Request</h2>
+                <p><strong>Name:</strong> {user_name}</p>
+                <p><strong>Email:</strong> {user_email}</p>
+                <p><strong>Phone:</strong> {req.phone_number}</p>
+                <p><strong>Preferred Slot:</strong> {slot_label}</p>
+                <p><strong>Loan ID:</strong> {req.loan_id or 'N/A'}</p>
+            </div>
+            """,
+        )
+
+        # Send confirmation to user
+        await _send_brevo_api_email(
+            to_email=user_email,
+            to_name=user_name,
+            subject=f"✅ Callback Confirmed — {slot_label}",
+            html_content=f"""
+            <div style="font-family: Arial; max-width: 500px; margin: 0 auto; padding: 20px;">
+                <h2 style="color: #7c3aed;">NexLoan</h2>
+                <p>Hi {user_name},</p>
+                <p>Your callback request has been received. Our support team will call you between <strong>{slot_label}</strong> today at <strong>{req.phone_number}</strong>.</p>
+                <p>Thank you for choosing NexLoan!</p>
+            </div>
+            """,
+        )
+    except Exception as e:
+        logger.warning(f"Callback email failed: {e}")
+
+    return {
+        "message": f"✅ Callback scheduled! We'll call you between {slot_label}.",
+        "preferred_slot": req.preferred_slot,
+        "slot_label": slot_label,
+    }

@@ -43,11 +43,28 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️  Redis connection skipped: {e}")
 
+    # Start EMI reminder scheduler
+    scheduler = None
+    try:
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        from app.services.reminder_service import send_emi_reminders
+        scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
+        scheduler.add_job(send_emi_reminders, 'cron', hour=9, minute=0, id='emi_reminders')
+        scheduler.start()
+        logger.info("✅ EMI reminder scheduler started (daily at 9:00 AM IST)")
+    except ImportError:
+        logger.warning("⚠️  APScheduler not installed — EMI reminders disabled. Install with: pip install apscheduler")
+    except Exception as e:
+        logger.warning(f"⚠️  Scheduler failed to start: {e}")
+
     logger.info(f"✅ {settings.APP_NAME} API is ready")
 
     yield
 
     # Shutdown
+    if scheduler:
+        scheduler.shutdown(wait=False)
+        logger.info("🛑 Scheduler shut down")
     await close_redis()
     logger.info("👋 NexLoan API shut down")
 
@@ -152,4 +169,8 @@ app.include_router(officer.router, prefix="/api/officer", tags=["Officer"])
 app.include_router(co_applicant.router, prefix="/api/application", tags=["Co-Applicant"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 
+# Phase 5 — Notifications, Documents
+from app.routers import notifications, documents
+app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
+app.include_router(documents.router, prefix="/api/documents", tags=["Documents"])
 

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
+import NotificationBell from "@/components/NotificationBell";
 
 export default function AppLayout({
   children,
@@ -29,6 +30,10 @@ export default function AppLayout({
     <div className="app-layout">
       <Sidebar />
       <div className="app-layout__content">
+        <header className="app-layout__topbar">
+          <div style={{ flex: 1 }} />
+          <NotificationBell />
+        </header>
         <main className="app-layout__main">{children}</main>
       </div>
 
@@ -45,6 +50,17 @@ export default function AppLayout({
           flex-direction: column;
           height: 100vh;
           overflow-y: auto;
+        }
+        .app-layout__topbar {
+          display: flex;
+          align-items: center;
+          padding: 12px 24px;
+          border-bottom: 1px solid rgba(255,255,255,0.06);
+          background: rgba(10,10,10,0.8);
+          backdrop-filter: blur(12px);
+          position: sticky;
+          top: 0;
+          z-index: 50;
         }
         .app-layout__main {
           flex: 1;

@@ -40,6 +40,7 @@ export default function Sidebar() {
       { name: "My Dashboard", path: "/dashboard", icon: "dashboard" },
       { name: "Track Loan", path: "/track", icon: "track" },
       { name: "Apply for Loan", path: "/apply", icon: "apply" },
+      { name: "Compare Loans", path: "/compare", icon: "compare" },
     );
   }
 
@@ -106,6 +107,13 @@ export default function Sidebar() {
         <line x1="3" y1="9" x2="21" y2="9" />
         <line x1="3" y1="15" x2="21" y2="15" />
         <line x1="9" y1="3" x2="9" y2="21" />
+      </svg>
+    ),
+    compare: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="12" y1="3" x2="12" y2="21" />
+        <polyline points="8 8 4 12 8 16" />
+        <polyline points="16 8 20 12 16 16" />
       </svg>
     ),
     logout: (
