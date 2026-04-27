@@ -67,60 +67,59 @@ _memory_otps: Dict[str, str] = {}
 async def store_otp(identifier: str, otp: str) -> None:
     """
     Store an OTP in Redis with TTL from settings.
-    Falls back to in-memory storage if Redis is unavailable.
+    Also stores in-memory as a backup, so verify_otp can always find it.
     Key format: otp:{identifier} (identifier is email or mobile)
     """
+    key = f"otp:{identifier}"
+
+    # Always store in memory as backup
+    _memory_otps[key] = otp
+
     try:
         client = get_redis()
         if client:
-            key = f"otp:{identifier}"
             await client.setex(key, settings.OTP_EXPIRE_SECONDS, otp)
-            logger.debug(f"🔐 OTP stored in Redis for {identifier}")
+            logger.debug(f"🔐 OTP stored in Redis + memory for {identifier}")
         else:
-            # Fallback: store in memory
-            _memory_otps[f"otp:{identifier}"] = otp
-            logger.debug(f"🔐 OTP stored in memory for {identifier} (Redis unavailable)")
+            logger.debug(f"🔐 OTP stored in memory only for {identifier} (Redis unavailable)")
     except Exception as e:
-        # Fallback: store in memory on any error
-        _memory_otps[f"otp:{identifier}"] = otp
-        logger.warning(f"⚠️  Redis OTP storage failed, using memory: {e}")
+        logger.warning(f"⚠️  Redis OTP storage failed, stored in memory only: {e}")
 
 
 async def verify_otp(identifier: str, otp: str) -> bool:
     """
     Verify an OTP against Redis or memory storage.
     Returns True if the OTP matches. Deletes the key on success (one-time use).
+    Checks BOTH Redis and in-memory storage to handle cases where the OTP
+    was stored in memory due to a transient Redis write failure.
     """
+    key = f"otp:{identifier}"
+    logger.debug(f"🔍 Verifying OTP for {identifier}, checking key: {key}")
+
+    # 1. Try Redis first
     try:
         client = get_redis()
         if client:
-            key = f"otp:{identifier}"
             stored_otp = await client.get(key)
-            
+            logger.debug(f"🔍 Redis lookup for {key}: found={'yes' if stored_otp else 'no'}")
+
             if stored_otp is not None and stored_otp == otp:
-                # Delete immediately after successful verification
                 await client.delete(key)
-                logger.debug(f"✅ OTP verified for {identifier}")
+                logger.debug(f"✅ OTP verified via Redis for {identifier}")
                 return True
-            return False
-        else:
-            # Fallback: check in-memory storage
-            key = f"otp:{identifier}"
-            stored_otp = _memory_otps.get(key)
-            if stored_otp is not None and stored_otp == otp:
-                del _memory_otps[key]
-                logger.debug(f"✅ OTP verified from memory for {identifier}")
-                return True
-            return False
     except Exception as e:
-        logger.warning(f"⚠️  OTP verification error: {e}")
-        # Fallback: check in-memory storage
-        key = f"otp:{identifier}"
-        stored_otp = _memory_otps.get(key)
-        if stored_otp is not None and stored_otp == otp:
-            del _memory_otps[key]
-            return True
-        return False
+        logger.warning(f"⚠️  Redis OTP lookup error: {e}")
+
+    # 2. Always also check in-memory storage (fallback)
+    stored_otp = _memory_otps.get(key)
+    logger.debug(f"🔍 Memory lookup for {key}: found={'yes' if stored_otp else 'no'}")
+    if stored_otp is not None and stored_otp == otp:
+        del _memory_otps[key]
+        logger.debug(f"✅ OTP verified from memory for {identifier}")
+        return True
+
+    logger.debug(f"❌ OTP verification failed for {identifier} — no match in Redis or memory")
+    return False
 
 
 # ─── Chat Session Helpers ───────────────────────────────────────────────────────

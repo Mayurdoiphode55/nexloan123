@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { adminAPI } from "@/lib/api";
+import { adminAPI, supportAPI } from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
@@ -32,9 +32,36 @@ interface KYCQueueItem {
 
 import type { AdminMetrics } from "@/types/loan";
 
+interface CallbackRequest {
+  id: string;
+  user_id: string;
+  loan_id: string | null;
+  phone_number: string;
+  preferred_slot: string;
+  slot_label: string;
+  status: string;
+  created_at: string;
+  user_name: string;
+  user_email: string;
+  reason: string;
+}
+
+interface SupportTicketItem {
+  id: string;
+  user_id: string;
+  loan_id: string | null;
+  subject: string;
+  status: string;
+  priority: string;
+  created_at: string;
+  updated_at: string | null;
+}
+
 export default function AdminPage() {
   const [queue, setQueue] = useState<KYCQueueItem[]>([]);
   const [analytics, setAnalytics] = useState<AdminMetrics | null>(null);
+  const [callbacks, setCallbacks] = useState<CallbackRequest[]>([]);
+  const [tickets, setTickets] = useState<SupportTicketItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedLoan, setExpandedLoan] = useState<string | null>(null);
@@ -45,12 +72,16 @@ export default function AdminPage() {
     try {
       setLoading(true);
       setError(null);
-      const [queueData, analyticsData] = await Promise.all([
+      const [queueData, analyticsData, callbackData, ticketsData] = await Promise.all([
         adminAPI.getKYCQueue(),
         adminAPI.getMetrics(),
+        adminAPI.getCallbackRequests().catch(() => ({ data: [] })),
+        supportAPI.listTickets().catch(() => ({ data: [] })),
       ]);
       setQueue(queueData.data || []);
       setAnalytics(analyticsData.data as any);
+      setCallbacks(callbackData.data || []);
+      setTickets(ticketsData.data || []);
     } catch (err: unknown) {
       console.error("Failed to load admin data", err);
       setError("Failed to load dashboard data. Make sure the backend is running.");
@@ -390,6 +421,137 @@ export default function AdminPage() {
         )}
       </div>
 
+      {/* ── Callback Requests ──────────────── */}
+      <div className="admin-section">
+        <h2 className="admin-section__title">📞 Callback Requests</h2>
+
+        {!loading && callbacks.length === 0 && (
+          <Card className="text-center py-8">
+            <p className="text-secondary text-sm">No callback requests at this time.</p>
+          </Card>
+        )}
+
+        {!loading && callbacks.length > 0 && (
+          <div className="callback-list">
+            {callbacks.map((cb) => (
+              <Card key={cb.id} padding="md" className="callback-item">
+                <div className="callback-item__row">
+                  <div className="callback-item__info">
+                    <div className="callback-item__name">{cb.user_name}</div>
+                    <div className="callback-item__meta">
+                      <span>📧 {cb.user_email}</span>
+                      <span>•</span>
+                      <span className="font-bold">📱 {cb.phone_number}</span>
+                    </div>
+                    <div className="callback-item__meta" style={{ marginTop: '4px' }}>
+                      <Badge variant="accent">🕐 {cb.slot_label}</Badge>
+                      <Badge variant={cb.status === 'pending' ? 'warning' : 'success'}>
+                        {cb.status.toUpperCase()}
+                      </Badge>
+                      <span className="text-tertiary text-xs">
+                        {new Date(cb.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    {cb.reason && (
+                      <div style={{ marginTop: '6px', padding: '8px 12px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', borderLeft: '3px solid var(--accent-400)' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block', marginBottom: '2px' }}>Reason</span>
+                        <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{cb.reason}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="callback-item__actions">
+                    {cb.status === 'pending' ? (
+                      <Button
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await adminAPI.updateCallbackStatus(cb.id, 'completed');
+                            setCallbacks((prev) => prev.map((c) =>
+                              c.id === cb.id ? { ...c, status: 'completed' } : c
+                            ));
+                            showToast('Callback marked as done', 'success');
+                          } catch {
+                            showToast('Failed to update', 'error');
+                          }
+                        }}
+                      >
+                        ✓ Mark Done
+                      </Button>
+                    ) : (
+                      <Badge variant="success">✓ Completed</Badge>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Support Tickets ──────────────── */}
+      <div className="admin-section">
+        <h2 className="admin-section__title">🎫 Support Tickets</h2>
+
+        {!loading && tickets.length === 0 && (
+          <Card className="text-center py-8">
+            <p className="text-secondary text-sm">No support tickets raised.</p>
+          </Card>
+        )}
+
+        {!loading && tickets.length > 0 && (
+          <div className="callback-list">
+            {tickets.map((t) => {
+              const statusColor = t.status === 'OPEN' ? 'warning'
+                : t.status === 'IN_PROGRESS' ? 'info'
+                : t.status === 'RESOLVED' ? 'success'
+                : 'default';
+              return (
+                <Card key={t.id} padding="md">
+                  <div className="callback-item__row">
+                    <div className="callback-item__info">
+                      <div className="callback-item__name">{t.subject}</div>
+                      <div className="callback-item__meta">
+                        <Badge variant={statusColor as any}>{t.status.replace('_', ' ')}</Badge>
+                        <Badge variant="neutral">{t.priority}</Badge>
+                        <span className="text-tertiary text-xs">
+                          {new Date(t.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="callback-item__actions" style={{ display: 'flex', gap: '8px' }}>
+                      {t.status === 'OPEN' && (
+                        <Button size="sm" variant="ghost" onClick={async () => {
+                          try {
+                            await supportAPI.updateStatus(t.id, 'IN_PROGRESS');
+                            setTickets(prev => prev.map(x => x.id === t.id ? { ...x, status: 'IN_PROGRESS' } : x));
+                            showToast('Ticket marked in progress', 'success');
+                          } catch { showToast('Failed', 'error'); }
+                        }}>▶ In Progress</Button>
+                      )}
+                      {(t.status === 'OPEN' || t.status === 'IN_PROGRESS') && (
+                        <Button size="sm" onClick={async () => {
+                          try {
+                            await supportAPI.updateStatus(t.id, 'RESOLVED');
+                            setTickets(prev => prev.map(x => x.id === t.id ? { ...x, status: 'RESOLVED' } : x));
+                            showToast('Ticket resolved', 'success');
+                          } catch { showToast('Failed', 'error'); }
+                        }}>✓ Resolve</Button>
+                      )}
+                      {t.status === 'RESOLVED' && (
+                        <Badge variant="success">✓ Resolved</Badge>
+                      )}
+                      {t.status === 'CLOSED' && (
+                        <Badge variant="default">Closed</Badge>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       <style jsx>{`
         .text-primary { color: var(--text-primary); }
         .text-secondary { color: var(--text-secondary); }
@@ -580,6 +742,34 @@ export default function AdminPage() {
           .queue-item__actions { width: 100%; justify-content: stretch; }
           .queue-docs { grid-template-columns: 1fr; }
           .queue-details { grid-template-columns: 1fr 1fr; }
+        }
+
+        .callback-list {
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-3);
+        }
+        .callback-item__row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: var(--space-4);
+        }
+        .callback-item__name {
+          font-weight: 700;
+          font-size: var(--text-base);
+        }
+        .callback-item__meta {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: var(--space-2);
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+          margin-top: var(--space-1);
+        }
+        .callback-item__actions {
+          flex-shrink: 0;
         }
       `}</style>
     </div>

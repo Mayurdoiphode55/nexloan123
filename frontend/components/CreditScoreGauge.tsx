@@ -70,7 +70,7 @@ export default function CreditScoreGauge({
           <path
             d={arcPath}
             fill="none"
-            stroke="var(--surface-sunken)"
+            stroke="rgba(255, 255, 255, 0.15)"
             strokeWidth={strokeWidth}
             strokeLinecap="round"
           />

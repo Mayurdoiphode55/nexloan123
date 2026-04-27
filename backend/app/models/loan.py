@@ -112,6 +112,7 @@ class Loan(Base):
     employment_type = Column(Enum(EmploymentType), nullable=True)
     existing_emi = Column(Float, default=0.0)
     date_of_birth = Column(DateTime, nullable=True)
+    gender = Column(String(20), nullable=True)
 
     # Underwriting results
     credit_score = Column(Integer, nullable=True)

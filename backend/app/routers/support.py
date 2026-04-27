@@ -54,6 +54,7 @@ async def create_ticket(
         priority=req.priority,
     )
     db.add(ticket)
+    await db.flush()
 
     # Add initial message
     msg = TicketMessage(
@@ -223,6 +224,7 @@ class CallbackRequestBody(BaseModel):
     phone_number: str = Field(..., min_length=10, max_length=15)
     preferred_slot: str = Field(..., description="morning, afternoon, or evening")
     loan_id: Optional[str] = None
+    reason: Optional[str] = None
 
 
 @router.post("/callback-request")
@@ -237,19 +239,20 @@ async def request_callback(
     if req.preferred_slot not in SLOT_LABELS:
         raise HTTPException(status_code=400, detail="preferred_slot must be: morning, afternoon, or evening")
 
-    user_id = str(current_user["id"])
-    user_name = current_user.get("full_name", "Customer")
-    user_email = current_user.get("email", "")
+    user_id = str(current_user.id)
+    user_name = getattr(current_user, "full_name", "Customer") or "Customer"
+    user_email = getattr(current_user, "email", "")
 
     # Save to DB
     await db.execute(sa_text("""
-        INSERT INTO callback_requests (id, user_id, loan_id, phone_number, preferred_slot, status, created_at)
-        VALUES (gen_random_uuid(), :uid, :lid, :phone, :slot, 'pending', NOW())
+        INSERT INTO callback_requests (id, user_id, loan_id, phone_number, preferred_slot, notes, status, created_at)
+        VALUES (gen_random_uuid(), :uid, :lid, :phone, :slot, :notes, 'pending', NOW())
     """), {
         "uid": user_id,
         "lid": req.loan_id,
         "phone": req.phone_number,
         "slot": req.preferred_slot,
+        "notes": req.reason,
     })
 
     # Create in-app notification
@@ -309,3 +312,59 @@ async def request_callback(
         "preferred_slot": req.preferred_slot,
         "slot_label": slot_label,
     }
+
+
+@router.get("/callback-requests")
+async def list_callback_requests(
+    current_user=Depends(require_role("LOAN_OFFICER", "ADMIN", "SUPER_ADMIN")),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all callback requests (Officers/Admins only)."""
+    from sqlalchemy import text as sa_text
+
+    rows = (await db.execute(sa_text("""
+        SELECT cr.id, cr.user_id, cr.loan_id, cr.phone_number, cr.preferred_slot,
+               cr.status, cr.created_at, cr.notes, u.full_name, u.email
+        FROM callback_requests cr
+        JOIN users u ON u.id = cr.user_id
+        ORDER BY cr.created_at DESC
+        LIMIT 50
+    """))).mappings().all()
+
+    return [
+        {
+            "id": str(r["id"]),
+            "user_id": str(r["user_id"]),
+            "loan_id": str(r["loan_id"]) if r["loan_id"] else None,
+            "phone_number": r["phone_number"],
+            "preferred_slot": r["preferred_slot"],
+            "slot_label": SLOT_LABELS.get(r["preferred_slot"], r["preferred_slot"]),
+            "status": r["status"],
+            "created_at": r["created_at"].isoformat() if r["created_at"] else "",
+            "user_name": r["full_name"],
+            "user_email": r["email"],
+            "reason": r["notes"] or "",
+        }
+        for r in rows
+    ]
+
+
+@router.put("/callback-requests/{request_id}/status")
+async def update_callback_status(
+    request_id: str,
+    req: UpdateStatusRequest,
+    current_user=Depends(require_role("LOAN_OFFICER", "ADMIN", "SUPER_ADMIN")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a callback request status (e.g. mark as completed)."""
+    from sqlalchemy import text as sa_text
+
+    result = await db.execute(sa_text(
+        "UPDATE callback_requests SET status = :status WHERE id = :rid RETURNING id"
+    ), {"status": req.status, "rid": request_id})
+    row = result.first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Callback request not found")
+    await db.commit()
+    return {"id": request_id, "new_status": req.status}
+

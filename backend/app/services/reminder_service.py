@@ -99,7 +99,7 @@ async def send_emi_reminders():
             """), {
                 "start_date": today - timedelta(days=1),
                 "end_date": today + timedelta(days=7),
-            }))).mappings().all()
+            })).mappings().all()
 
             sent_count = 0
             for row in rows:
@@ -138,7 +138,7 @@ async def send_emi_reminders():
                     "lid": str(row["loan_id"]),
                     "type": notif_type,
                     "today": today.isoformat(),
-                }))).first()
+                })).first()
 
                 if existing:
                     continue  # Already sent today

@@ -19,6 +19,7 @@ const SLOTS = [
 export default function CallbackModal({ isOpen, onClose, loanId, userPhone }: CallbackModalProps) {
   const [phone, setPhone] = useState(userPhone || '');
   const [selectedSlot, setSelectedSlot] = useState('');
+  const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
@@ -43,6 +44,7 @@ export default function CallbackModal({ isOpen, onClose, loanId, userPhone }: Ca
         phone_number: phone,
         preferred_slot: selectedSlot,
         loan_id: loanId || null,
+        reason: reason || undefined,
       });
       setSuccess(true);
     } catch (err: any) {
@@ -180,6 +182,32 @@ export default function CallbackModal({ isOpen, onClose, loanId, userPhone }: Ca
                 </button>
               ))}
             </div>
+
+            {/* Reason for callback */}
+            <label style={{ display: 'block', marginBottom: '20px' }}>
+              <span style={{ color: '#a3a3a3', fontSize: '13px', marginBottom: '6px', display: 'block' }}>
+                Reason for Callback <span style={{ color: '#525252' }}>(optional)</span>
+              </span>
+              <textarea
+                value={reason}
+                onChange={e => setReason(e.target.value)}
+                placeholder="e.g. Need help with loan repayment options..."
+                rows={3}
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: '8px',
+                  color: '#e5e5e5',
+                  fontSize: '14px',
+                  outline: 'none',
+                  boxSizing: 'border-box' as const,
+                  resize: 'vertical' as const,
+                  fontFamily: 'inherit',
+                }}
+              />
+            </label>
 
             {error && (
               <p style={{ color: '#ef4444', fontSize: '13px', marginBottom: '12px' }}>{error}</p>
