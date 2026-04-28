@@ -5,19 +5,18 @@ import { useRouter } from "next/navigation";
 import { loanAPI } from "@/lib/api";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
-import LoanTracker from "@/components/dashboard/LoanTracker";
+import LoanTimeline from "@/components/dashboard/LoanTimeline";
+import CallbackModal from "@/components/dashboard/CallbackModal";
 
 export default function TrackPage() {
   const router = useRouter();
   const [loan, setLoan] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showCallback, setShowCallback] = useState(false);
 
   useEffect(() => {
     const fetchLoan = async () => {
       try {
-        const token = localStorage.getItem("nexloan_token");
-        // DEV BYPASS: Removed auth redirect block
-
         const res = await loanAPI.getMyLoans();
         const loans = res.data;
         if (loans && loans.length > 0) {
@@ -114,13 +113,38 @@ export default function TrackPage() {
         </Badge>
       </div>
 
-      {/* Timeline Card */}
+      {/* Live Loan Timeline with Visual Progress Bar */}
       <Card variant="elevated" style={{ marginTop: "var(--space-6)" }}>
         <div className="track-card-header">
-          <h2 className="track-card-header__title">Application Timeline</h2>
+          <h2 className="track-card-header__title">📊 Live Loan Status Tracker</h2>
         </div>
-        <LoanTracker loanId={loan.id} compact={false} />
+        <div style={{ padding: "var(--space-4) var(--space-6) var(--space-6)" }}>
+          <LoanTimeline loanId={loan.id} />
+        </div>
       </Card>
+
+      {/* Quick Actions */}
+      <div className="track-actions">
+        <button
+          className="track-action-btn"
+          onClick={() => setShowCallback(true)}
+        >
+          📞 Request a Callback
+        </button>
+        <button
+          className="track-action-btn track-action-btn--outline"
+          onClick={() => router.push("/dashboard")}
+        >
+          📋 View Dashboard
+        </button>
+      </div>
+
+      {/* Callback Modal */}
+      <CallbackModal
+        isOpen={showCallback}
+        onClose={() => setShowCallback(false)}
+        loanId={loan.id}
+      />
 
       <style jsx>{`
         .track-page {
@@ -170,11 +194,46 @@ export default function TrackPage() {
         }
 
         .track-card-header__title {
-          font-size: 11px;
+          font-size: 13px;
           font-weight: 700;
-          letter-spacing: 0.1em;
+          letter-spacing: 0.05em;
           text-transform: uppercase;
           color: var(--text-tertiary);
+        }
+
+        .track-actions {
+          display: flex;
+          gap: var(--space-3);
+          margin-top: var(--space-6);
+        }
+
+        .track-action-btn {
+          flex: 1;
+          padding: var(--space-3) var(--space-4);
+          background: linear-gradient(135deg, #7c3aed, #a855f7);
+          color: white;
+          border: none;
+          border-radius: var(--radius-md);
+          font-weight: 600;
+          font-size: 14px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .track-action-btn:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+        }
+
+        .track-action-btn--outline {
+          background: transparent;
+          border: 1px solid rgba(124, 58, 237, 0.4);
+          color: #a855f7;
+        }
+
+        .track-action-btn--outline:hover {
+          background: rgba(124, 58, 237, 0.1);
+          box-shadow: none;
         }
       `}</style>
     </div>

@@ -14,6 +14,7 @@ export default function SupportTickets() {
   const [showModal, setShowModal] = useState(false);
   const [newSubject, setNewSubject] = useState('');
   const [newDesc, setNewDesc] = useState('');
+  const [submitError, setSubmitError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const fetchTickets = async () => {
@@ -26,15 +27,33 @@ export default function SupportTickets() {
   useEffect(() => { fetchTickets(); }, []);
 
   const handleCreate = async () => {
-    if (!newSubject.trim() || !newDesc.trim()) return;
+    setSubmitError('');
+    if (!newSubject.trim() || newSubject.trim().length < 3) {
+      setSubmitError('Subject must be at least 3 characters.');
+      return;
+    }
+    if (!newDesc.trim() || newDesc.trim().length < 10) {
+      setSubmitError('Description must be at least 10 characters.');
+      return;
+    }
     setLoading(true);
     try {
-      await supportAPI.createTicket({ subject: newSubject, description: newDesc });
+      await supportAPI.createTicket({ subject: newSubject.trim(), description: newDesc.trim() });
       setShowModal(false);
       setNewSubject('');
       setNewDesc('');
+      setSubmitError('');
       await fetchTickets();
-    } catch {} finally { setLoading(false); }
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      if (typeof detail === 'string') {
+        setSubmitError(detail);
+      } else if (Array.isArray(detail)) {
+        setSubmitError(detail.map((d: any) => d.msg).join(', '));
+      } else {
+        setSubmitError('Failed to submit request. Please try again.');
+      }
+    } finally { setLoading(false); }
   };
 
   const handleExpand = async (ticketId: string) => {
@@ -131,10 +150,13 @@ export default function SupportTickets() {
             <textarea
               value={newDesc}
               onChange={(e) => setNewDesc(e.target.value)}
-              placeholder="Describe your issue..."
+              placeholder="Describe your issue (at least 10 characters)..."
               rows={4}
               className="support__modal-textarea"
             />
+            {submitError && (
+              <p style={{ color: 'var(--color-error)', fontSize: '13px', margin: '0 0 8px' }}>{submitError}</p>
+            )}
             <div className="support__modal-actions">
               <Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button>
               <Button loading={loading} onClick={handleCreate}>Submit</Button>

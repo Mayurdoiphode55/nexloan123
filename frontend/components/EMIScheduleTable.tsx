@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import { paymentAPI } from "@/lib/api";
@@ -48,6 +49,7 @@ function loadRazorpayScript(): Promise<boolean> {
 export default function EMIScheduleTable({ schedule, loanId, onPayEMI, onRefresh }: EMIScheduleTableProps) {
   const [payingId, setPayingId] = useState<number | null>(null);
   const [paidIds, setPaidIds] = useState<Set<number>>(new Set());
+  const router = useRouter();
 
   const handlePay = async (installmentNo: number) => {
     setPayingId(installmentNo);
@@ -101,7 +103,18 @@ export default function EMIScheduleTable({ schedule, loanId, onPayEMI, onRefresh
         setPaidIds((prev) => new Set(prev).add(installmentNo));
       }
     } catch { /* handled by Razorpay SDK */ }
-    finally { setPayingId(null); }
+    finally {
+      setPayingId(null);
+      // Check if this was the last pending EMI → redirect to closure
+      const remainingPending = schedule.filter(
+        (r) => r.status?.toUpperCase() !== 'PAID' && !paidIds.has(r.installment_no) && r.installment_no !== installmentNo
+      );
+      if (remainingPending.length === 0 && loanId) {
+        setTimeout(() => {
+          router.push(`/closure?id=${loanId}`);
+        }, 1500);
+      }
+    }
   };
 
   if (!schedule || schedule.length === 0) {
@@ -149,13 +162,13 @@ export default function EMIScheduleTable({ schedule, loanId, onPayEMI, onRefresh
                   </Badge>
                 </td>
                 <td>
-                  {!isPaid && row.status?.toUpperCase() !== "PAID" && onPayEMI && (
+                  {!isPaid && row.status?.toUpperCase() !== "PAID" && (loanId || onPayEMI) && (
                     <Button
                       size="sm"
                       loading={payingId === row.installment_no}
                       onClick={() => handlePay(row.installment_no)}
                     >
-                      {paidIds.has(row.installment_no) ? "✓" : "Pay"}
+                      {paidIds.has(row.installment_no) ? "✓" : "💳 Pay"}
                     </Button>
                   )}
                 </td>
@@ -189,10 +202,10 @@ export default function EMIScheduleTable({ schedule, loanId, onPayEMI, onRefresh
                 <span>Balance</span>
                 <span className="emi-table__mono">₹{row.outstanding_balance?.toLocaleString('en-IN')}</span>
               </div>
-              {!isPaid && onPayEMI && (
+              {!isPaid && (loanId || onPayEMI) && (
                 <div style={{ marginTop: 'var(--space-3)' }}>
                   <Button size="sm" fullWidth loading={payingId === row.installment_no} onClick={() => handlePay(row.installment_no)}>
-                    Pay EMI
+                    💳 Pay EMI
                   </Button>
                 </div>
               )}

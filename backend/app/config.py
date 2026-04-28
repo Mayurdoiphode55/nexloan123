@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # Groq AI
     GROQ_API_KEY: str = ""
     GROQ_TEXT_MODEL: str = "llama-3.1-8b-instant"
-    GROQ_VISION_MODEL: str = "llama-3.2-11b-vision-preview"
+    GROQ_VISION_MODEL: str = "meta-llama/llama-4-scout-17b-16e-instruct"
     # Hugging Face
     HF_API_KEY: str = ""
     HF_DOCUMENT_QA_MODEL: str = "impira/layoutlm-document-qa"

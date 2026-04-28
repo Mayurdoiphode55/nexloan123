@@ -6,7 +6,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import type { UserRole } from "@/types/loan";
 
-export default function Sidebar() {
+interface SidebarProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [userRole, setUserRole] = useState<UserRole>("BORROWER");
@@ -28,7 +33,12 @@ export default function Sidebar() {
   const handleLogout = () => {
     localStorage.removeItem("nexloan_token");
     localStorage.removeItem("nexloan_user");
+    onClose();
     router.push("/");
+  };
+
+  const handleLinkClick = () => {
+    onClose();
   };
 
   // Build navigation links based on role
@@ -40,6 +50,7 @@ export default function Sidebar() {
       { name: "My Dashboard", path: "/dashboard", icon: "dashboard" },
       { name: "Track Loan", path: "/track", icon: "track" },
       { name: "Apply for Loan", path: "/apply", icon: "apply" },
+      { name: "Compare Loans", path: "/compare", icon: "compare" },
     );
   }
 
@@ -108,6 +119,13 @@ export default function Sidebar() {
         <line x1="9" y1="3" x2="9" y2="21" />
       </svg>
     ),
+    compare: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="12" y1="3" x2="12" y2="21" />
+        <polyline points="8 8 4 12 8 16" />
+        <polyline points="16 8 20 12 16 16" />
+      </svg>
+    ),
     logout: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -121,8 +139,22 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Desktop Sidebar */}
-      <aside className="nexloan-sidebar">
+      {/* Overlay backdrop */}
+      <div
+        className={`sidebar-overlay ${isOpen ? "sidebar-overlay--visible" : ""}`}
+        onClick={onClose}
+      />
+
+      {/* Slide-out Sidebar */}
+      <aside className={`nexloan-sidebar ${isOpen ? "nexloan-sidebar--open" : ""}`}>
+        {/* Close button */}
+        <button className="nexloan-sidebar__close" onClick={onClose} aria-label="Close sidebar">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+
         <div className="nexloan-sidebar__header">
           <h1 className="nexloan-sidebar__logo">NexLoan</h1>
           <p className="nexloan-sidebar__welcome">
@@ -144,6 +176,7 @@ export default function Sidebar() {
                 key={link.path}
                 href={link.path}
                 className={`nexloan-sidebar__link ${isActive ? "nexloan-sidebar__link--active" : ""}`}
+                onClick={handleLinkClick}
               >
                 <span className="nexloan-sidebar__link-icon">{icons[link.icon]}</span>
                 <span className="nexloan-sidebar__link-text">{link.name}</span>
@@ -186,18 +219,63 @@ export default function Sidebar() {
       </nav>
 
       <style jsx global>{`
+        /* ── Overlay ───────────────────────── */
+        .sidebar-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 199;
+          background: rgba(0, 0, 0, 0.5);
+          backdrop-filter: blur(4px);
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 0.3s ease;
+        }
+        .sidebar-overlay--visible {
+          opacity: 1;
+          pointer-events: auto;
+        }
+
         /* ── Desktop Sidebar ───────────────── */
         .nexloan-sidebar {
-          position: sticky;
+          position: fixed;
           top: 0;
-          width: 240px;
+          left: 0;
+          width: 280px;
           height: 100vh;
           background: var(--surface-raised);
           border-right: 1px solid var(--surface-border);
           display: flex;
           flex-direction: column;
-          transition: all var(--transition-base);
-          flex-shrink: 0;
+          z-index: 200;
+          transform: translateX(-100%);
+          transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          box-shadow: none;
+        }
+        .nexloan-sidebar--open {
+          transform: translateX(0);
+          box-shadow: 8px 0 32px rgba(0, 0, 0, 0.4);
+        }
+
+        .nexloan-sidebar__close {
+          position: absolute;
+          top: 16px;
+          right: 16px;
+          width: 32px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: var(--surface-border);
+          border: none;
+          border-radius: var(--radius-md);
+          color: var(--text-secondary);
+          cursor: pointer;
+          transition: all var(--transition-fast);
+          z-index: 1;
+        }
+        .nexloan-sidebar__close:hover {
+          background: var(--surface-overlay);
+          color: var(--text-primary);
         }
 
         .nexloan-sidebar__header {
@@ -239,6 +317,7 @@ export default function Sidebar() {
           display: flex;
           flex-direction: column;
           gap: var(--space-1);
+          overflow-y: auto;
         }
 
         .nexloan-sidebar__link {
@@ -246,7 +325,7 @@ export default function Sidebar() {
           align-items: center;
           gap: var(--space-3);
           padding: var(--space-3) var(--space-4);
-          border-radius: 0 var(--radius-md) var(--radius-md) 0;
+          border-radius: var(--radius-md);
           color: var(--text-secondary);
           font-weight: 500;
           font-size: var(--text-sm);
@@ -300,7 +379,8 @@ export default function Sidebar() {
         }
 
         .nexloan-sidebar__theme-toggle {
-          display: none;
+          padding: var(--space-3) var(--space-6);
+          border-top: 1px solid var(--surface-border);
         }
 
         /* ── Mobile Bottom Nav ────────────── */
@@ -342,34 +422,7 @@ export default function Sidebar() {
         }
 
         /* ── Responsive ──────────────────── */
-        @media (max-width: 1024px) {
-          .nexloan-sidebar {
-            width: 64px;
-          }
-          .nexloan-sidebar__link-text,
-          .nexloan-sidebar__welcome,
-          .nexloan-sidebar__logo,
-          .nexloan-sidebar__role-badge {
-            display: none;
-          }
-          .nexloan-sidebar__header {
-            padding: var(--space-4);
-          }
-          .nexloan-sidebar__link {
-            justify-content: center;
-            padding: var(--space-3);
-            border-left: none;
-            border-radius: var(--radius-md);
-          }
-          .nexloan-sidebar__logout {
-            justify-content: center;
-          }
-        }
-
         @media (max-width: 640px) {
-          .nexloan-sidebar {
-            display: none;
-          }
           .nexloan-bottom-nav {
             display: flex;
             justify-content: space-around;

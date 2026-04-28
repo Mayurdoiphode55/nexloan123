@@ -34,6 +34,7 @@ class InquiryRequest(BaseModel):
     employment_type: EmploymentType
     existing_emi: float = 0.0
     date_of_birth: datetime
+    gender: Optional[str] = None
 
 
 class InquiryResponse(BaseModel):
@@ -99,6 +100,7 @@ async def create_inquiry(
         employment_type=req.employment_type,
         existing_emi=req.existing_emi,
         date_of_birth=req.date_of_birth.replace(tzinfo=None),
+        gender=req.gender,
     )
     
     db.add(new_loan)

@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import logging
 import os
+import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -77,7 +78,7 @@ async def create_payment_order(
 
     # Fallback: simulate order_id
     if not razorpay_order_id:
-        razorpay_order_id = f"order_SIMULATED_{loan.loan_number}_{installment_no}"
+        razorpay_order_id = f"order_SIMULATED_{loan.loan_number}_{installment_no}_{uuid.uuid4().hex[:6]}"
 
     payment = Payment(
         loan_id=loan.id,
@@ -157,10 +158,25 @@ async def verify_payment(
     loan = (await db.execute(select(Loan).where(Loan.id == payment.loan_id))).scalar_one_or_none()
     if loan:
         loan.total_paid = (loan.total_paid or 0) + payment.amount
+        
+        # Check if all EMIs are paid
+        pending_emis = (await db.execute(
+            select(EMISchedule).where(
+                EMISchedule.loan_id == loan.id,
+                EMISchedule.status != PaymentStatus.PAID
+            )
+        )).scalars().all()
+        
+        old_status = loan.status.value
+        
+        if not pending_emis:
+            loan.status = LoanStatus.CLOSED
+            loan.closed_at = datetime.utcnow()
+            
         audit = AuditLog(
             loan_id=loan.id,
             action="EMI_PAID_RAZORPAY",
-            from_status=loan.status.value,
+            from_status=old_status,
             to_status=loan.status.value,
             actor=str(current_user.id),
             metadata_={"installment_no": payment.emi_installment_no, "amount": payment.amount, "payment_id": req.payment_id},

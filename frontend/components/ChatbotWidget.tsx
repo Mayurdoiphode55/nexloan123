@@ -19,6 +19,7 @@ export default function ChatbotWidget() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const initSession = useCallback(async () => {
+    if (sessionId) return; // Already initialized
     let storedSid = sessionStorage.getItem("nexloan_chat_session");
     if (!storedSid) {
       try {
@@ -26,7 +27,7 @@ export default function ChatbotWidget() {
         storedSid = res.data.session_id;
         sessionStorage.setItem("nexloan_chat_session", storedSid as string);
       } catch (err) {
-        console.error("Failed to start chat session", err);
+        console.warn("Chat session init deferred — backend not ready");
         return;
       }
     }
@@ -34,11 +35,14 @@ export default function ChatbotWidget() {
     setMessages([
       { role: "bot", content: "Hi there! I'm NexBot, your NexLoan assistant. How can I help you today?" }
     ]);
-  }, []);
+  }, [sessionId]);
 
+  // Only init when user opens the chat (lazy)
   useEffect(() => {
-    initSession();
-  }, [initSession]);
+    if (isOpen && !sessionId) {
+      initSession();
+    }
+  }, [isOpen, sessionId, initSession]);
 
   useEffect(() => {
     if (bottomRef.current) {

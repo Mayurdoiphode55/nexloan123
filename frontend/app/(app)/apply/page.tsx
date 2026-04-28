@@ -30,7 +30,10 @@ export default function ApplyPage() {
   }, [router]);
 
   const [formData, setFormData] = useState({
-    date_of_birth: '',
+    dob_month: '',
+    dob_day: '',
+    dob_year: '',
+    gender: '',
     employment_type: 'SALARIED',
     loan_amount: 500000,
     purpose: 'Other',
@@ -74,7 +77,15 @@ export default function ApplyPage() {
     setLoading(true);
     setError('');
     try {
-      if (!formData.date_of_birth) throw new Error("Date of Birth is required");
+      if (!formData.dob_month || !formData.dob_day || !formData.dob_year) {
+        throw new Error("Date of Birth is required");
+      }
+      if (!formData.gender) {
+        throw new Error("Gender is required");
+      }
+      
+      const dobDate = `${formData.dob_year}-${String(formData.dob_month).padStart(2, '0')}-${String(formData.dob_day).padStart(2, '0')}`;
+      
       const inquiryPayload = {
         loan_amount: formData.loan_amount,
         tenure_months: formData.tenure_months,
@@ -82,7 +93,8 @@ export default function ApplyPage() {
         monthly_income: formData.monthly_income,
         employment_type: formData.employment_type,
         existing_emi: formData.existing_emi,
-        date_of_birth: formData.date_of_birth + "T00:00:00Z",
+        date_of_birth: dobDate + "T00:00:00Z",
+        gender: formData.gender,
       };
       const response = await loanAPI.createInquiry(inquiryPayload);
       const loan = response.data;
@@ -202,16 +214,64 @@ export default function ApplyPage() {
               <Input label="Full Name" value={user.full_name} disabled />
               <Input label="Email Address" value={user.email} disabled />
               <Input label="Mobile Number" value={user.mobile} addon="+91" disabled />
-              <div className="apply-field">
-                <label className="apply-field__label">DATE OF BIRTH</label>
-                <input
-                  required
-                  type="date"
-                  name="date_of_birth"
-                  value={formData.date_of_birth}
+              <div className="apply-field" style={{ gridColumn: '1 / -1' }}>
+                <label className="apply-field__label" style={{ marginBottom: '8px', display: 'block' }}>DATE OF BIRTH</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                  <select
+                    name="dob_month"
+                    value={formData.dob_month}
+                    onChange={handleInputChange}
+                    className="apply-field__select"
+                    required
+                  >
+                    <option value="" disabled>Month</option>
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                      <option key={m} value={String(m)}>
+                        {new Date(2000, m - 1).toLocaleString('default', { month: 'long' })}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    name="dob_day"
+                    value={formData.dob_day}
+                    onChange={handleInputChange}
+                    placeholder="Day"
+                    min="1"
+                    max="31"
+                    className="apply-field__input"
+                    required
+                    style={{ background: 'var(--surface-sunken)', border: '1px solid var(--surface-border)', color: 'white', padding: '12px 16px', borderRadius: '8px', width: '100%', fontSize: '15px' }}
+                  />
+                  <input
+                    type="number"
+                    name="dob_year"
+                    value={formData.dob_year}
+                    onChange={handleInputChange}
+                    placeholder="Year"
+                    min="1900"
+                    max={new Date().getFullYear() - 18}
+                    className="apply-field__input"
+                    required
+                    style={{ background: 'var(--surface-sunken)', border: '1px solid var(--surface-border)', color: 'white', padding: '12px 16px', borderRadius: '8px', width: '100%', fontSize: '15px' }}
+                  />
+                </div>
+              </div>
+
+              <div className="apply-field" style={{ gridColumn: '1 / -1' }}>
+                <label className="apply-field__label">GENDER</label>
+                <select
+                  name="gender"
+                  value={formData.gender}
                   onChange={handleInputChange}
-                  className="apply-field__date"
-                />
+                  className="apply-field__select"
+                  required
+                >
+                  <option value="" disabled>Gender</option>
+                  <option value="MALE">Male</option>
+                  <option value="FEMALE">Female</option>
+                  <option value="OTHER">Other</option>
+                </select>
               </div>
             </div>
 
