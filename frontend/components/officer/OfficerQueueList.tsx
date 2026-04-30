@@ -51,11 +51,16 @@ export default function OfficerQueueList({ items, selectedId, onSelect, statusFi
           >
             <div className="oq-item__top">
               <span className="oq-item__num">{item.loan_number}</span>
-              {item.ai_recommendation && (
-                <Badge variant={aiColor(item.ai_recommendation)}>
-                  AI: {item.ai_recommendation}
-                </Badge>
-              )}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {item.loan_type === "COLLATERAL" && (
+                  <Badge variant="warning">COLLATERAL</Badge>
+                )}
+                {item.ai_recommendation && (
+                  <Badge variant={aiColor(item.ai_recommendation)}>
+                    AI: {item.ai_recommendation}
+                  </Badge>
+                )}
+              </div>
             </div>
             <div className="oq-item__name">{item.borrower_name}</div>
             <div className="oq-item__meta">

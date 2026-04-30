@@ -12,34 +12,34 @@ interface BadgeProps {
 
 const colorMap: Record<BadgeVariant, { bg: string; text: string; border: string }> = {
   success: {
-    bg: 'rgba(34,197,94,0.12)',
-    text: '#22C55E',
-    border: 'rgba(34,197,94,0.25)',
+    bg: 'var(--color-success-bg)',
+    text: 'var(--color-success)',
+    border: 'rgba(22, 163, 74, 0.2)',
   },
   warning: {
-    bg: 'rgba(245,158,11,0.12)',
-    text: '#F59E0B',
-    border: 'rgba(245,158,11,0.25)',
+    bg: 'var(--color-warning-bg)',
+    text: 'var(--color-warning)',
+    border: 'rgba(217, 119, 6, 0.2)',
   },
   error: {
-    bg: 'rgba(239,68,68,0.12)',
-    text: '#EF4444',
-    border: 'rgba(239,68,68,0.25)',
+    bg: 'var(--color-error-bg)',
+    text: 'var(--color-error)',
+    border: 'rgba(220, 38, 38, 0.2)',
   },
   info: {
-    bg: 'rgba(59,130,246,0.12)',
-    text: '#3B82F6',
-    border: 'rgba(59,130,246,0.25)',
+    bg: 'var(--color-info-bg)',
+    text: 'var(--color-info)',
+    border: 'rgba(37, 99, 235, 0.2)',
   },
   accent: {
-    bg: 'rgba(139,92,246,0.12)',
-    text: '#A78BFA',
-    border: 'rgba(139,92,246,0.25)',
+    bg: 'var(--accent-subtle)',
+    text: 'var(--accent-primary)',
+    border: 'rgba(79, 70, 229, 0.2)',
   },
   neutral: {
-    bg: 'rgba(161,161,170,0.12)',
-    text: '#A1A1AA',
-    border: 'rgba(161,161,170,0.25)',
+    bg: 'var(--surface-sunken)',
+    text: 'var(--text-secondary)',
+    border: 'var(--surface-border)',
   },
 }
 

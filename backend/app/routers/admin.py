@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.loan import Loan, LoanStatus, KYCDocument, AuditLog, User
 from app.utils.database import get_db
+from app.utils.permissions import require_permission, Permission
 
 logger = logging.getLogger("nexloan.admin")
 
@@ -74,7 +75,10 @@ from sqlalchemy import func
     response_model=AnalyticsResponse,
     summary="Get admin analytics dashboard data"
 )
-async def get_analytics(db: AsyncSession = Depends(get_db)):
+async def get_analytics(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission(Permission.VIEW_DASHBOARD_OPS)),
+):
     # Total loans
     total_loans_result = await db.execute(select(func.count(Loan.id)))
     total_loans = total_loans_result.scalar() or 0
@@ -125,7 +129,10 @@ async def get_analytics(db: AsyncSession = Depends(get_db)):
     response_model=list[KYCQueueItem],
     summary="Get all loans pending KYC manual review",
 )
-async def get_kyc_queue(db: AsyncSession = Depends(get_db)):
+async def get_kyc_queue(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission(Permission.VIEW_DASHBOARD_OPS)),
+):
     """
     Returns all loans with KYC_PENDING status along with their
     KYC document details and applicant information.
@@ -181,7 +188,11 @@ async def get_kyc_queue(db: AsyncSession = Depends(get_db)):
     response_model=AdminActionResponse,
     summary="Approve KYC for a pending loan",
 )
-async def approve_kyc(loan_id: str, db: AsyncSession = Depends(get_db)):
+async def approve_kyc(
+    loan_id: str, 
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission(Permission.KYC_APPROVE)),
+):
     """
     Approves a KYC_PENDING loan → sets status to KYC_VERIFIED.
     Updates the KYC document verdict to PASS.
@@ -242,7 +253,11 @@ async def approve_kyc(loan_id: str, db: AsyncSession = Depends(get_db)):
     response_model=AdminActionResponse,
     summary="Reject KYC for a pending loan",
 )
-async def reject_kyc(loan_id: str, db: AsyncSession = Depends(get_db)):
+async def reject_kyc(
+    loan_id: str, 
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission(Permission.KYC_REJECT)),
+):
     """
     Rejects a KYC_PENDING loan → sets status to REJECTED.
     Creates an audit log entry with actor 'admin'.
@@ -297,6 +312,7 @@ async def reject_kyc(loan_id: str, db: AsyncSession = Depends(get_db)):
 )
 async def get_admin_metrics(
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission(Permission.VIEW_DASHBOARD_OPS)),
 ):
     """
     NOTE: No auth guard for prototype. Add role-based auth before production.
@@ -374,6 +390,7 @@ async def get_admin_metrics(
 )
 async def get_reapply_reminders(
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission(Permission.VIEW_DASHBOARD_OPS)),
 ):
     """
     NOTE: No auth guard for prototype.
@@ -412,6 +429,7 @@ async def get_reapply_reminders(
 async def send_reapply_reminder(
     loan_id: str,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission(Permission.VIEW_DASHBOARD_OPS)),
 ):
     """
     NOTE: No auth guard for prototype.

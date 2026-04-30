@@ -14,7 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.loan import User, UserRole
 from app.utils.database import get_db
-from app.utils.auth import get_current_user, require_role, generate_otp, create_access_token
+from app.utils.auth import get_current_user, generate_otp, create_access_token
+from app.utils.permissions import require_permission, Permission
 from app.utils.redis_client import store_otp
 from app.services.email_service import send_otp_email
 
@@ -31,6 +32,7 @@ class CreateOfficerRequest(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=255)
     email: EmailStr
     mobile: str = Field(..., pattern=r"^\d{10}$")
+    role: Optional[str] = "LOAN_OFFICER"
 
 
 class ChangeRoleRequest(BaseModel):
@@ -66,7 +68,7 @@ async def list_users(
     role: Optional[str] = None,
     search: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("ADMIN", "SUPER_ADMIN")),
+    current_user: User = Depends(require_permission(Permission.USER_MANAGE)),
 ):
     """
     Returns a list of all users. Optionally filter by role or search by name/email.
@@ -129,7 +131,7 @@ async def create_officer(
     req: CreateOfficerRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("ADMIN", "SUPER_ADMIN")),
+    current_user: User = Depends(require_permission(Permission.USER_MANAGE)),
 ):
     """
     Creates a new user with LOAN_OFFICER role.
@@ -151,7 +153,7 @@ async def create_officer(
         email=req.email,
         mobile=req.mobile,
         is_verified=False,
-        role=UserRole.LOAN_OFFICER.value,
+        role=req.role or UserRole.LOAN_OFFICER.value,
         is_active=True,
     )
     db.add(officer)
@@ -185,7 +187,7 @@ async def change_user_role(
     user_id: str,
     req: ChangeRoleRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("SUPER_ADMIN")),
+    current_user: User = Depends(require_permission(Permission.MANAGE_ROLES)),
 ):
     """
     Change a user's role. Only SUPER_ADMIN can do this.
@@ -233,7 +235,7 @@ async def change_user_status(
     user_id: str,
     req: ChangeStatusRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("ADMIN", "SUPER_ADMIN")),
+    current_user: User = Depends(require_permission(Permission.USER_MANAGE)),
 ):
     """Activate or deactivate a user account."""
     if str(current_user.id) == user_id:
@@ -260,3 +262,144 @@ async def change_user_status(
         "is_active": user.is_active,
         "message": f"User {action} successfully",
     }
+
+
+# ─── prompt4.md Phase 6: Employee Management ────────────────────────────────
+
+
+class CreateEmployeeRequest(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=255)
+    email: EmailStr
+    mobile: str = Field(..., pattern=r"^\d{10}$")
+    role: str = Field(..., description="LOAN_OFFICER | VERIFIER | UNDERWRITER | ADMIN")
+    department: Optional[str] = None
+    employee_id: Optional[str] = None
+
+
+@router.get(
+    "/employees",
+    summary="List all employee users (non-borrower)",
+)
+async def list_employees(
+    department: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission(Permission.USER_MANAGE)),
+):
+    """Returns all non-BORROWER users — the internal team."""
+    stmt = select(User).where(
+        User.role.in_(["LOAN_OFFICER", "VERIFIER", "UNDERWRITER", "ADMIN", "SUPER_ADMIN"])
+    ).order_by(User.created_at.desc())
+    if department:
+        stmt = stmt.where(User.department == department)
+    result = await db.execute(stmt)
+    users = result.scalars().all()
+    return [
+        {
+            "id": str(u.id),
+            "full_name": u.full_name,
+            "email": u.email,
+            "mobile": u.mobile,
+            "role": u.role,
+            "department": getattr(u, 'department', None),
+            "employee_id": getattr(u, 'employee_id', None),
+            "is_active": getattr(u, 'is_active', True),
+            "created_at": u.created_at.isoformat(),
+        }
+        for u in users
+    ]
+
+
+@router.post(
+    "/employees/create",
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new employee account (Admin only)",
+)
+async def create_employee(
+    req: CreateEmployeeRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission(Permission.CREATE_EMPLOYEES)),
+):
+    """Creates employee with specified role. Sends welcome email OTP."""
+    valid_roles = ["LOAN_OFFICER", "VERIFIER", "UNDERWRITER", "ADMIN"]
+    if req.role not in valid_roles:
+        raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {valid_roles}")
+
+    existing = await db.execute(
+        select(User).where((User.email == req.email) | (User.mobile == req.mobile))
+    )
+    if existing.scalars().first():
+        raise HTTPException(status_code=400, detail="User with this email or mobile already exists")
+
+    employee = User(
+        full_name=req.full_name,
+        email=req.email,
+        mobile=req.mobile,
+        is_verified=False,
+        role=req.role,
+        is_active=True,
+        department=req.department,
+        employee_id=req.employee_id,
+    )
+    db.add(employee)
+    await db.commit()
+    await db.refresh(employee)
+
+    otp = generate_otp(length=6)
+    await store_otp(req.email, otp)
+    background_tasks.add_task(send_otp_email, req.email, otp, req.full_name)
+    logger.info(f"✅ Employee created: {employee.email} ({req.role}) by {current_user.email}")
+
+    return {
+        "user_id": str(employee.id),
+        "email": employee.email,
+        "role": employee.role,
+        "message": f"Employee account created. Welcome OTP sent to {req.email}.",
+    }
+
+
+class ChangeDeptRequest(BaseModel):
+    department: str
+    reason: Optional[str] = None
+
+
+@router.put(
+    "/{user_id}/department",
+    summary="Change employee department (tracked in history)",
+)
+async def change_department(
+    user_id: str,
+    req: ChangeDeptRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission(Permission.USER_MANAGE)),
+):
+    """Updates user department and records history in EmployeeHistory."""
+    from app.models.loan import EmployeeHistory
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    old_dept = getattr(user, 'department', None)
+    user.department = req.department
+
+    history = EmployeeHistory(
+        user_id=user.id,
+        change_type="DEPARTMENT_CHANGE",
+        old_value=old_dept,
+        new_value=req.department,
+        changed_by=current_user.id,
+        reason=req.reason,
+    )
+    db.add(history)
+    await db.commit()
+    logger.info(f"✅ Department changed: {user.email} {old_dept} → {req.department}")
+
+    return {
+        "user_id": str(user.id),
+        "old_department": old_dept,
+        "new_department": req.department,
+        "message": "Department updated and logged",
+    }
+

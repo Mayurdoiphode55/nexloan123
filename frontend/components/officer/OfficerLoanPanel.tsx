@@ -22,6 +22,14 @@ export default function OfficerLoanPanel({ loanId, onDecision }: Props) {
   const [overrideAI, setOverrideAI] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
   const [saving, setSaving] = useState(false);
+  const [userRole, setUserRole] = useState<string>("LOAN_OFFICER");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const u = localStorage.getItem("nexloan_user");
+      if (u) setUserRole(JSON.parse(u).role);
+    }
+  }, []);
 
   const load = async () => {
     setLoading(true);
@@ -72,10 +80,29 @@ export default function OfficerLoanPanel({ loanId, onDecision }: Props) {
           {loan.ai_recommendation && (
             <Badge variant={statusVariant(loan.ai_recommendation)}>AI: {loan.ai_recommendation}</Badge>
           )}
-          {alreadyDecided ? (
-            <Badge variant={statusVariant(loan.officer_decision!)}>{loan.officer_decision}</Badge>
-          ) : (
+          {loan.status === 'APPROVED' ? (
+            <Button size="sm" onClick={async () => {
+              try {
+                const token = localStorage.getItem('nexloan_token');
+                const res = await fetch(`/api/disbursement/${loan.id}/disburse`, {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${token}` }
+                });
+                if (res.ok) {
+                   alert("Loan disbursed successfully!");
+                   onDecision();
+                } else {
+                   const err = await res.json();
+                   alert(`Disbursement failed: ${err.detail || 'Unknown error'}`);
+                }
+              } catch (e) {
+                console.error(e);
+              }
+            }}>💸 Disburse Funds</Button>
+          ) : !alreadyDecided ? (
             <Button size="sm" onClick={() => setShowDecide(true)}>Make Decision</Button>
+          ) : (
+            <Badge variant={statusVariant(loan.officer_decision!)}>{loan.officer_decision}</Badge>
           )}
         </div>
       </div>
@@ -108,6 +135,33 @@ export default function OfficerLoanPanel({ loanId, onDecision }: Props) {
                 <span className="olp-stat__value">{v as string}</span>
               </div>
             ))}
+            {loan.loan_type === "COLLATERAL" && (
+              <>
+                <div className="olp-divider" />
+                {[
+                  ["Asset Type", loan.collateral_type ?? "—"],
+                  ["Asset Value", loan.collateral_value ? `₹${loan.collateral_value.toLocaleString("en-IN")}` : "—"],
+                  ["Description", loan.collateral_description ?? "—"],
+                  ["Collateral Verified", loan.collateral_verified ? "✅ Yes" : "❌ No"],
+                ].map(([k, v]) => (
+                  <div key={k as string} className="olp-stat">
+                    <span className="olp-stat__label">{k as string}</span>
+                    <span className="olp-stat__value">
+                      {v as string}
+                      {k === "Collateral Verified" && !loan.collateral_verified && (
+                        <Button size="sm" style={{ marginLeft: '8px' }} loading={saving} onClick={async () => {
+                          setSaving(true);
+                          try {
+                            await officerAPI.verifyCollateral(loan.id);
+                            await load();
+                          } catch {} finally { setSaving(false); }
+                        }}>Verify Now</Button>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </>
+            )}
             <div className="olp-divider" />
             {[
               ["Borrower", borrower.full_name],
@@ -232,8 +286,22 @@ export default function OfficerLoanPanel({ loanId, onDecision }: Props) {
           <div className="olp-modal" onClick={e => e.stopPropagation()}>
             <h3 className="olp-modal__title">Make Decision</h3>
             <div className="olp-decision-btns">
-              <button className={`olp-dec-btn olp-dec-btn--approve ${decision === "APPROVE" ? "olp-dec-btn--selected" : ""}`} onClick={() => setDecision("APPROVE")}>✅ Approve</button>
-              <button className={`olp-dec-btn olp-dec-btn--reject ${decision === "REJECT" ? "olp-dec-btn--selected" : ""}`} onClick={() => setDecision("REJECT")}>❌ Reject</button>
+              {userRole === "VERIFIER" ? (
+                <>
+                  <button className={`olp-dec-btn olp-dec-btn--approve ${decision === "APPROVE" ? "olp-dec-btn--selected" : ""}`} onClick={() => setDecision("APPROVE")}>✅ Approve KYC</button>
+                  <button className={`olp-dec-btn olp-dec-btn--reject ${decision === "REJECT" ? "olp-dec-btn--selected" : ""}`} onClick={() => setDecision("REJECT")}>❌ Reject KYC</button>
+                </>
+              ) : userRole === "UNDERWRITER" ? (
+                <>
+                  <button className={`olp-dec-btn olp-dec-btn--approve ${decision === "APPROVE" ? "olp-dec-btn--selected" : ""}`} onClick={() => setDecision("APPROVE")}>✅ Approve</button>
+                  <button className={`olp-dec-btn olp-dec-btn--reject ${decision === "REJECT" ? "olp-dec-btn--selected" : ""}`} onClick={() => setDecision("REJECT")}>❌ Reject</button>
+                </>
+              ) : (
+                <>
+                  <button className={`olp-dec-btn olp-dec-btn--approve ${decision === "APPROVE" ? "olp-dec-btn--selected" : ""}`} onClick={() => setDecision("APPROVE")}>✅ Process Disburse</button>
+                  <button className={`olp-dec-btn olp-dec-btn--reject ${decision === "REJECT" ? "olp-dec-btn--selected" : ""}`} onClick={() => setDecision("REJECT")}>❌ Return to Borrower</button>
+                </>
+              )}
             </div>
             {loan.ai_recommendation && loan.ai_recommendation !== decision && (
               <div className="olp-override-warn">

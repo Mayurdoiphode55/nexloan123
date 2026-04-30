@@ -1,0 +1,40 @@
+{
+  "tenant_id": "nexloan-default",
+  "company_name": "NexLoan",
+  "company_tagline": "AI-Powered Lending, Simplified.",
+  "company_address": "Theoremlabs Pvt. Ltd., Mumbai, Maharashtra – 400001",
+  "logo_url": "/branding/logo.svg",
+  "favicon_url": "/favicon.ico",
+  "primary_color": "#4F46E5",
+  "secondary_color": "#F5F5F5",
+  "email_sender_name": "NexLoan Support",
+  "email_sender_address": "support@nexloan.in",
+  "support_phone": "+91-98765-43210",
+  "features": {
+    "pre_closure_enabled": true,
+    "pre_closure_charge_percent": 10,
+    "pre_closure_grace_months": 6,
+    "collateral_loans_enabled": true,
+    "co_applicant_enabled": true,
+    "emi_pause_enabled": true,
+    "monthly_statement_email": true,
+    "annual_statement_email": true
+  },
+  "defaults": {
+    "interest_rate_personal": 14.5,
+    "interest_rate_collateral": 9.5,
+    "max_loan_amount": 10000000,
+    "min_loan_amount": 50000,
+    "max_tenure_months": 84
+  },
+  "theme": {
+    "color_scheme": "light",
+    "font_family": "Inter, sans-serif",
+    "border_radius": "8px"
+  },
+  "legal": {
+    "terms_url": "/terms",
+    "privacy_url": "/privacy",
+    "pre_closure_terms": "Pre-closure of this loan account within the first 6 months of disbursement will attract a pre-closure charge of 10% on the outstanding principal. After 6 months, pre-closure is permitted free of charge. The pre-closure amount is calculated based only on the remaining outstanding principal at the time of request."
+  }
+}

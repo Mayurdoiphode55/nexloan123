@@ -25,6 +25,7 @@ export default function UserManagementPage() {
   const [officerName, setOfficerName] = useState("");
   const [officerEmail, setOfficerEmail] = useState("");
   const [officerMobile, setOfficerMobile] = useState("");
+  const [officerRole, setOfficerRole] = useState("LOAN_OFFICER");
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -33,7 +34,7 @@ export default function UserManagementPage() {
       if (filter !== "ALL") params.role = filter;
       if (search.trim()) params.search = search.trim();
       const res = await userAPI.list(params);
-      setUsers(res.data);
+      setUsers(res.data.filter((u: any) => u.role !== "BORROWER"));
     } catch (err: any) {
       if (err.response?.status === 403) {
         showToast("You don't have permission to access this page.", "error");
@@ -57,20 +58,37 @@ export default function UserManagementPage() {
     }
     try {
       setCreating(true);
-      await userAPI.createOfficer({
-        full_name: officerName.trim(),
-        email: officerEmail.trim(),
-        mobile: officerMobile.trim(),
+      
+      const token = localStorage.getItem('nexloan_token');
+      const base = process.env.NEXT_PUBLIC_API_URL || '';
+      
+      const response = await fetch(`${base}/api/users/create-officer`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          full_name: officerName.trim(),
+          email: officerEmail.trim(),
+          mobile: officerMobile.trim(),
+          role: officerRole
+        })
       });
-      showToast("Loan Officer account created. OTP sent to their email. ✅", "success");
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.detail || "Failed to create account.");
+      }
+
+      showToast(`${officerRole.replace(/_/g, ' ')} account created. OTP sent to their email. ✅`, "success");
       setShowModal(false);
       setOfficerName("");
       setOfficerEmail("");
       setOfficerMobile("");
       fetchUsers();
     } catch (err: any) {
-      const msg = err.response?.data?.detail || "Failed to create officer account.";
-      showToast(msg, "error");
+      showToast(err.message || "Failed to create account.", "error");
     } finally {
       setCreating(false);
     }
@@ -109,9 +127,10 @@ export default function UserManagementPage() {
 
   const filterTabs = [
     { label: "All", value: "ALL" },
-    { label: "Borrowers", value: "BORROWER" },
-    { label: "Officers", value: "LOAN_OFFICER" },
     { label: "Admins", value: "ADMIN" },
+    { label: "Underwriters", value: "UNDERWRITER" },
+    { label: "Verifiers", value: "VERIFIER" },
+    { label: "Loan Officers", value: "LOAN_OFFICER" },
   ];
 
   return (
@@ -122,7 +141,7 @@ export default function UserManagementPage() {
           <h1 className="user-mgmt__title">User Management</h1>
           <p className="user-mgmt__subtitle">{users.length} users total</p>
         </div>
-        <Button onClick={() => setShowModal(true)}>+ Create Loan Officer</Button>
+        <Button onClick={() => setShowModal(true)}>+ Add Team Member</Button>
       </div>
 
       {/* Filters */}
@@ -204,10 +223,11 @@ export default function UserManagementPage() {
                           value={user.role}
                           onChange={(e) => handleChangeRole(user.id, e.target.value)}
                         >
-                          <option value="BORROWER">Borrower</option>
-                          <option value="LOAN_OFFICER">Loan Officer</option>
-                          <option value="ADMIN">Admin</option>
                           <option value="SUPER_ADMIN">Super Admin</option>
+                          <option value="ADMIN">Admin</option>
+                          <option value="UNDERWRITER">Underwriter</option>
+                          <option value="VERIFIER">Verifier</option>
+                          <option value="LOAN_OFFICER">Loan Officer</option>
                         </select>
                       )}
                     </td>
@@ -224,7 +244,7 @@ export default function UserManagementPage() {
         <div className="um-modal-overlay">
           <div className="um-modal animate-card-entrance">
             <div className="um-modal__header">
-              <h2 className="um-modal__title">Create Loan Officer</h2>
+              <h2 className="um-modal__title">Add Team Member</h2>
               <button onClick={() => setShowModal(false)} className="um-modal__close">×</button>
             </div>
             <div className="um-modal__body">
@@ -258,6 +278,20 @@ export default function UserManagementPage() {
                   onChange={(e) => setOfficerMobile(e.target.value)}
                   maxLength={10}
                 />
+              </label>
+              <label className="um-modal__label">
+                Role
+                <select
+                  className="um-modal__input"
+                  value={officerRole}
+                  onChange={(e) => setOfficerRole(e.target.value)}
+                >
+                  <option value="LOAN_OFFICER">Loan Officer</option>
+                  <option value="VERIFIER">Verifier</option>
+                  <option value="UNDERWRITER">Underwriter</option>
+                  <option value="ADMIN">Admin</option>
+                  <option value="SUPER_ADMIN">Super Admin</option>
+                </select>
               </label>
             </div>
             <div className="um-modal__footer">

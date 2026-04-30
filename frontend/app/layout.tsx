@@ -1,18 +1,13 @@
 import type { Metadata } from "next";
-import { Inter, Sora, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import ChatbotWidget from "@/components/ChatbotWidget";
 import ToastProvider from "@/components/ToastProvider";
+import { TenantProvider } from "@/lib/tenant";
 
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
-  display: "swap",
-});
-
-const sora = Sora({
-  subsets: ["latin"],
-  variable: "--font-sora",
   display: "swap",
 });
 
@@ -23,9 +18,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NexLoan — AI-First Personal Loan Platform",
+  title: "NexLoan — AI-First Loan Platform",
   description:
-    "AI-powered personal loan origination by Theoremlabs. Apply, verify, and manage your loan in minutes.",
+    "AI-powered loan origination by Theoremlabs. Apply, verify, and manage your loan in minutes.",
 };
 
 export default function RootLayout({
@@ -33,15 +28,15 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Inline script to prevent flash of wrong theme
+  // Inline script to prevent flash of wrong theme — default to light
   const themeScript = `
     (function() {
       try {
         var stored = localStorage.getItem('nexloan_theme');
-        var theme = stored || 'dark';
+        var theme = stored || 'light';
         document.documentElement.setAttribute('data-theme', theme);
       } catch(e) {
-        document.documentElement.setAttribute('data-theme', 'dark');
+        document.documentElement.setAttribute('data-theme', 'light');
       }
     })();
   `;
@@ -50,15 +45,17 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${inter.variable} ${sora.variable} ${jetbrainsMono.variable}`}
+      className={`${inter.variable} ${jetbrainsMono.variable}`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>
-        <ToastProvider>
-          {children}
-        </ToastProvider>
+        <TenantProvider>
+          <ToastProvider>
+            {children}
+          </ToastProvider>
+        </TenantProvider>
         <ChatbotWidget />
       </body>
     </html>

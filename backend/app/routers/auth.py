@@ -245,9 +245,7 @@ async def verify_otp_endpoint(req: VerifyOTPRequest, db: AsyncSession = Depends(
     user_email = row["email"]
     user_role = row["role"] or "BORROWER"
 
-    # Only this specific email gets LOAN_OFFICER access
-    if user_email == "mayurdoiphode55@gmail.com":
-        user_role = "LOAN_OFFICER"
+
 
     logger.info(f"User verified via OTP: {user_email} ({user_id}) role={user_role}")
 

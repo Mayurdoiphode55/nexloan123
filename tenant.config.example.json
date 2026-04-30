@@ -1,0 +1,40 @@
+{
+  "tenant_id": "your-tenant-id",
+  "company_name": "Your Bank — Personal Loans",
+  "company_tagline": "Loans designed for your life.",
+  "company_address": "Your Bank Ltd, Address, City — PIN",
+  "logo_url": "/branding/logo.svg",
+  "favicon_url": "/branding/favicon.ico",
+  "primary_color": "#004C8F",
+  "secondary_color": "#F5F5F5",
+  "email_sender_name": "Your Bank Loan Services",
+  "email_sender_address": "loans@yourtenant.nexloan.in",
+  "support_phone": "+91-XX-XXXX-XXXX",
+  "features": {
+    "pre_closure_enabled": true,
+    "pre_closure_charge_percent": 10,
+    "pre_closure_grace_months": 6,
+    "collateral_loans_enabled": true,
+    "co_applicant_enabled": true,
+    "emi_pause_enabled": true,
+    "monthly_statement_email": true,
+    "annual_statement_email": true
+  },
+  "defaults": {
+    "interest_rate_personal": 14.5,
+    "interest_rate_collateral": 9.5,
+    "max_loan_amount": 5000000,
+    "min_loan_amount": 50000,
+    "max_tenure_months": 84
+  },
+  "theme": {
+    "color_scheme": "light",
+    "font_family": "Inter, sans-serif",
+    "border_radius": "8px"
+  },
+  "legal": {
+    "terms_url": "https://yourtenant.nexloan.in/terms",
+    "privacy_url": "https://yourtenant.nexloan.in/privacy",
+    "pre_closure_terms": "Pre-closure of this loan account within the first 6 months of disbursement will attract a pre-closure charge of 10% on the outstanding principal. After 6 months, pre-closure is permitted free of charge."
+  }
+}

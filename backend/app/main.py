@@ -50,8 +50,15 @@ async def lifespan(app: FastAPI):
         from app.services.reminder_service import send_emi_reminders
         scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
         scheduler.add_job(send_emi_reminders, 'cron', hour=9, minute=0, id='emi_reminders')
+
+        # Phase 2: Statement automation
+        from app.services.statement_service import generate_monthly_statements, generate_annual_statements
+        scheduler.add_job(generate_monthly_statements, 'cron', day=1, hour=6, minute=0, id='monthly_statements')
+        scheduler.add_job(generate_annual_statements, 'cron', month=4, day=1, hour=6, minute=0, id='annual_statements')
+
         scheduler.start()
         logger.info("✅ EMI reminder scheduler started (daily at 9:00 AM IST)")
+        logger.info("✅ Statement automation scheduled (monthly 1st 6AM, annual April 1st 6AM)")
     except ImportError:
         logger.warning("⚠️  APScheduler not installed — EMI reminders disabled. Install with: pip install apscheduler")
     except Exception as e:
@@ -173,4 +180,19 @@ app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 from app.routers import notifications, documents
 app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
 app.include_router(documents.router, prefix="/api/documents", tags=["Documents"])
+
+# Phase 2 — Enterprise Features
+from app.routers import dashboard, enquiry, delegation, announcements
+app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
+app.include_router(enquiry.router, prefix="/api/enquiry", tags=["Enquiry"])
+app.include_router(delegation.router, prefix="/api/delegation", tags=["Delegation"])
+app.include_router(announcements.router, prefix="/api/announcements", tags=["Announcements"])
+
+# Employee management alias (also accessible via /api/users/employees but this is cleaner)
+app.include_router(user_management.router, prefix="/api/employees", tags=["Employees"], include_in_schema=False)
+
+# Phase 4 (prompt4.md) — White-label config + Statements
+from app.routers import config_router, statements
+app.include_router(config_router.router, prefix="/api/config", tags=["Config"])
+app.include_router(statements.router, prefix="/api/statements", tags=["Statements"])
 

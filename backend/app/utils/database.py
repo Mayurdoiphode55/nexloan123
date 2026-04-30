@@ -39,10 +39,35 @@ AsyncSessionLocal = async_sessionmaker(
 async def init_db():
     """
     Create all tables from the ORM models.
+    Seeds a default TenantConfig if none exists for TENANT_ID.
     Called during FastAPI lifespan startup.
     """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Seed default tenant config
+    from app.config import settings
+    from app.models.loan import TenantConfig
+    from sqlalchemy import select
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(TenantConfig).where(TenantConfig.tenant_id == settings.TENANT_ID)
+        )
+        existing = result.scalar_one_or_none()
+        if not existing:
+            tenant = TenantConfig(
+                tenant_id=settings.TENANT_ID,
+                client_name="NexLoan",
+                tagline="AI-Powered Lending, Simplified.",
+                primary_color="#4F46E5",
+                secondary_color="#F5F5F5",
+                support_email="support@nexloan.in",
+                support_phone="+91-98765-43210",
+                registered_name="Theoremlabs Pvt. Ltd.",
+                departments=["Credit", "Operations", "Customer Service", "Risk", "Collections"],
+            )
+            session.add(tenant)
+            await session.commit()
 
 
 async def get_db():

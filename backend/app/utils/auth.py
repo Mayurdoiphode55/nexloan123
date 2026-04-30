@@ -71,9 +71,6 @@ def decode_token(token: str) -> dict:
         )
 
 
-# The ONE officer email — only this account gets LOAN_OFFICER privileges
-OFFICER_EMAIL = "mayurdoiphode55@gmail.com"
-
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -119,10 +116,6 @@ async def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account has been deactivated",
         )
-
-    # RBAC: Only this specific email gets LOAN_OFFICER role
-    if user.email == OFFICER_EMAIL:
-        user.role = "LOAN_OFFICER"
 
     return user
 

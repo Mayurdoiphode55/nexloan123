@@ -1,432 +1,334 @@
-"use client";
+'use client';
 
-import React, { useEffect, useState } from "react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { ThemeToggle } from "@/components/ThemeToggle";
-import type { UserRole } from "@/types/loan";
+import { useRouter, usePathname } from 'next/navigation';
+import { useTenant } from '@/lib/tenant';
+import {
+  LayoutDashboard, FileText, MapPin, Download, Scale,
+  Headset, LogOut, ChevronLeft, ChevronRight, Users,
+  Settings, BarChart3, BookOpen, Bell
+} from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  pendingCount?: number;
+  userRole?: string;
+  userName?: string;
+  userDept?: string;
 }
 
-export default function Sidebar({ isOpen, onClose }: SidebarProps) {
-  const pathname = usePathname();
-  const router = useRouter();
-  const [userRole, setUserRole] = useState<UserRole>("BORROWER");
-  const [userName, setUserName] = useState("User");
+const NAV_BORROWER = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/apply', label: 'Apply', icon: FileText },
+  { href: '/track', label: 'Track Application', icon: MapPin },
+  { href: '/compare', label: 'Loan Comparison', icon: BookOpen },
+  { href: '/enquiry', label: 'Service Enquiry', icon: Bell },
+  { href: '/support', label: 'Support', icon: Headset },
+];
 
-  useEffect(() => {
-    const userData = localStorage.getItem("nexloan_user");
-    if (userData) {
-      try {
-        const user = JSON.parse(userData);
-        setUserName(user.full_name || "User");
-        setUserRole(user.role || "BORROWER");
-      } catch (err) {
-        console.error("Failed to parse user data", err);
-      }
-    }
-  }, []);
+const NAV_OFFICER = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/officer', label: 'Work Queue', icon: BarChart3 },
+  { href: '/enquiries', label: 'Enquiries', icon: FileText },
+  { href: '/delegations', label: 'Delegations', icon: Users },
+];
+
+const NAV_ADMIN = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/officer', label: 'Work Queue', icon: BarChart3 },
+  { href: '/admin', label: 'Admin Panel', icon: Settings },
+  { href: '/admin/settings', label: 'Settings', icon: Settings },
+  { href: '/admin/users', label: 'User Management', icon: Users },
+  { href: '/enquiries', label: 'Enquiries', icon: FileText },
+  { href: '/delegations', label: 'Delegations', icon: Users },
+];
+
+export default function Sidebar({
+  isOpen, onClose, collapsed, onToggleCollapse,
+  pendingCount = 0, userRole = 'BORROWER', userName = '', userDept = '',
+}: SidebarProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const tenant = useTenant();
+
+  const navItems =
+    ['ADMIN', 'SUPER_ADMIN'].includes(userRole) ? NAV_ADMIN
+    : ['LOAN_OFFICER', 'VERIFIER', 'UNDERWRITER'].includes(userRole) ? NAV_OFFICER
+    : NAV_BORROWER;
 
   const handleLogout = () => {
-    localStorage.removeItem("nexloan_token");
-    localStorage.removeItem("nexloan_user");
-    onClose();
-    router.push("/");
+    localStorage.removeItem('nexloan_token');
+    localStorage.removeItem('nexloan_user');
+    router.push('/');
   };
 
-  const handleLinkClick = () => {
-    onClose();
-  };
-
-  // Build navigation links based on role
-  const navLinks: { name: string; path: string; icon: string }[] = [];
-
-  // BORROWER links (also visible to LOAN_OFFICER so they can test everything)
-  if (userRole === "BORROWER" || userRole === "LOAN_OFFICER") {
-    navLinks.push(
-      { name: "My Dashboard", path: "/dashboard", icon: "dashboard" },
-      { name: "Track Loan", path: "/track", icon: "track" },
-      { name: "Apply for Loan", path: "/apply", icon: "apply" },
-      { name: "Compare Loans", path: "/compare", icon: "compare" },
-    );
-  }
-
-  // LOAN_OFFICER-only links
-  if (userRole === "LOAN_OFFICER") {
-    navLinks.push(
-      { name: "Officer Queue", path: "/officer", icon: "queue" },
-    );
-  }
-
-  // ADMIN links
-  if (userRole === "ADMIN" || userRole === "SUPER_ADMIN" || userRole === "LOAN_OFFICER") {
-    navLinks.push(
-      { name: "Admin Panel", path: "/admin", icon: "admin" },
-    );
-  }
-
-  // Role badge colors
-  const roleBadge: Record<string, { label: string; color: string }> = {
-    BORROWER: { label: "Borrower", color: "var(--accent-400)" },
-    LOAN_OFFICER: { label: "Officer", color: "var(--color-warning)" },
-    ADMIN: { label: "Admin", color: "var(--color-error)" },
-    SUPER_ADMIN: { label: "Super Admin", color: "#f43f5e" },
-  };
-
-  const icons: Record<string, React.ReactNode> = {
-    dashboard: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="7" height="7" rx="1" />
-        <rect x="14" y="3" width="7" height="7" rx="1" />
-        <rect x="3" y="14" width="7" height="7" rx="1" />
-        <rect x="14" y="14" width="7" height="7" rx="1" />
-      </svg>
-    ),
-    track: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-      </svg>
-    ),
-    apply: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-        <line x1="12" y1="18" x2="12" y2="12" />
-        <line x1="9" y1="15" x2="15" y2="15" />
-      </svg>
-    ),
-    admin: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-      </svg>
-    ),
-    users: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-      </svg>
-    ),
-    queue: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-        <line x1="3" y1="9" x2="21" y2="9" />
-        <line x1="3" y1="15" x2="21" y2="15" />
-        <line x1="9" y1="3" x2="9" y2="21" />
-      </svg>
-    ),
-    compare: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="12" y1="3" x2="12" y2="21" />
-        <polyline points="8 8 4 12 8 16" />
-        <polyline points="16 8 20 12 16 16" />
-      </svg>
-    ),
-    logout: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-        <polyline points="16 17 21 12 16 7" />
-        <line x1="21" y1="12" x2="9" y2="12" />
-      </svg>
-    ),
-  };
-
-  const badge = roleBadge[userRole] || roleBadge.BORROWER;
+  const primary = tenant.primary_color || '#4F46E5';
 
   return (
     <>
-      {/* Overlay backdrop */}
-      <div
-        className={`sidebar-overlay ${isOpen ? "sidebar-overlay--visible" : ""}`}
-        onClick={onClose}
-      />
+      {/* Mobile overlay */}
+      {isOpen && (
+        <div
+          onClick={onClose}
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(0,0,0,0.3)',
+            zIndex: 199,
+            display: 'none',
+          }}
+          className="sidebar-overlay"
+        />
+      )}
 
-      {/* Slide-out Sidebar */}
-      <aside className={`nexloan-sidebar ${isOpen ? "nexloan-sidebar--open" : ""}`}>
-        {/* Close button */}
-        <button className="nexloan-sidebar__close" onClick={onClose} aria-label="Close sidebar">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
-
-        <div className="nexloan-sidebar__header">
-          <h1 className="nexloan-sidebar__logo">NexLoan</h1>
-          <p className="nexloan-sidebar__welcome">
-            Welcome, {userName.split(" ")[0]}
-          </p>
-          <span
-            className="nexloan-sidebar__role-badge"
-            style={{ color: badge.color, borderColor: badge.color }}
+      <aside
+        className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''} ${isOpen ? 'sidebar--mobile-open' : ''}`}
+        style={{ '--sidebar-primary': primary } as React.CSSProperties}
+      >
+        {/* ── Logo / Brand ─────────────────── */}
+        <div className="sidebar__logo">
+          {!collapsed && (
+            tenant.logo_url
+              ? <img src={tenant.logo_url} alt={tenant.client_name} style={{ height: 32, objectFit: 'contain' }} />
+              : <span className="sidebar__brand-name">{tenant.client_name}</span>
+          )}
+          <button
+            className="sidebar__collapse-btn"
+            onClick={onToggleCollapse}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            {badge.label}
-          </span>
+            {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+          </button>
         </div>
 
-        <nav className="nexloan-sidebar__nav">
-          {navLinks.map((link) => {
-            const isActive = pathname === link.path || pathname.startsWith(link.path + "/");
+        <div className="sidebar__divider" />
+
+        {/* ── Nav Links ────────────────────── */}
+        <nav className="sidebar__nav">
+          {navItems.map(item => {
+            const Icon = item.icon;
+            const active = pathname === item.href || pathname.startsWith(item.href + '/');
+            const isDashboard = item.href === '/dashboard';
             return (
-              <Link
-                key={link.path}
-                href={link.path}
-                className={`nexloan-sidebar__link ${isActive ? "nexloan-sidebar__link--active" : ""}`}
-                onClick={handleLinkClick}
+              <button
+                key={item.href}
+                onClick={() => { router.push(item.href); onClose(); }}
+                className={`sidebar__nav-item ${active ? 'sidebar__nav-item--active' : ''}`}
+                title={collapsed ? item.label : undefined}
               >
-                <span className="nexloan-sidebar__link-icon">{icons[link.icon]}</span>
-                <span className="nexloan-sidebar__link-text">{link.name}</span>
-              </Link>
+                <span className="sidebar__nav-icon">
+                  <Icon size={16} />
+                  {isDashboard && pendingCount > 0 && (
+                    <span className="sidebar__badge">{pendingCount > 9 ? '9+' : pendingCount}</span>
+                  )}
+                </span>
+                {!collapsed && <span className="sidebar__nav-label">{item.label}</span>}
+              </button>
             );
           })}
         </nav>
 
-        <div className="nexloan-sidebar__footer">
-          <button onClick={handleLogout} className="nexloan-sidebar__logout">
-            <span className="nexloan-sidebar__link-icon">{icons.logout}</span>
-            <span className="nexloan-sidebar__link-text">Log Out</span>
-          </button>
-        </div>
+        {/* ── Bottom: dept + logout ─────────── */}
+        <div style={{ flex: 1 }} />
+        <div className="sidebar__divider" />
 
-        <div className="nexloan-sidebar__theme-toggle">
-          <ThemeToggle />
-        </div>
+        {!collapsed && userDept && (
+          <div className="sidebar__dept">
+            <span className="sidebar__dept-label">DEPARTMENT</span>
+            <span className="sidebar__dept-value">{userDept}</span>
+          </div>
+        )}
+
+        <button className="sidebar__logout" onClick={handleLogout} title="Logout">
+          <LogOut size={16} />
+          {!collapsed && <span>Logout</span>}
+        </button>
       </aside>
 
-      {/* Mobile Bottom Nav */}
-      <nav className="nexloan-bottom-nav">
-        {navLinks.map((link) => {
-          const isActive = pathname === link.path || pathname.startsWith(link.path + "/");
-          return (
-            <Link
-              key={link.path}
-              href={link.path}
-              className={`nexloan-bottom-nav__item ${isActive ? "nexloan-bottom-nav__item--active" : ""}`}
-            >
-              {icons[link.icon]}
-              <span>{link.name.split(" ").pop()}</span>
-            </Link>
-          );
-        })}
-        <button onClick={handleLogout} className="nexloan-bottom-nav__item">
-          {icons.logout}
-          <span>Logout</span>
-        </button>
-      </nav>
-
-      <style jsx global>{`
-        /* ── Overlay ───────────────────────── */
-        .sidebar-overlay {
-          position: fixed;
-          inset: 0;
-          z-index: 199;
-          background: rgba(0, 0, 0, 0.5);
-          backdrop-filter: blur(4px);
-          opacity: 0;
-          pointer-events: none;
-          transition: opacity 0.3s ease;
-        }
-        .sidebar-overlay--visible {
-          opacity: 1;
-          pointer-events: auto;
-        }
-
-        /* ── Desktop Sidebar ───────────────── */
-        .nexloan-sidebar {
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 280px;
+      <style>{`
+        .sidebar {
+          width: var(--sidebar-width, 220px);
           height: 100vh;
-          background: var(--surface-raised);
-          border-right: 1px solid var(--surface-border);
+          background: #FFFFFF;
+          border-right: 1px solid #E5E7EB;
           display: flex;
           flex-direction: column;
+          position: fixed;
+          top: 0; left: 0;
           z-index: 200;
-          transform: translateX(-100%);
-          transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-          box-shadow: none;
+          transition: width 0.22s cubic-bezier(0.4,0,0.2,1);
+          overflow: hidden;
         }
-        .nexloan-sidebar--open {
-          transform: translateX(0);
-          box-shadow: 8px 0 32px rgba(0, 0, 0, 0.4);
+        .sidebar--collapsed {
+          width: 56px;
         }
 
-        .nexloan-sidebar__close {
-          position: absolute;
-          top: 16px;
-          right: 16px;
-          width: 32px;
-          height: 32px;
+        /* Logo area */
+        .sidebar__logo {
+          height: 56px;
           display: flex;
           align-items: center;
-          justify-content: center;
-          background: var(--surface-border);
-          border: none;
-          border-radius: var(--radius-md);
-          color: var(--text-secondary);
-          cursor: pointer;
-          transition: all var(--transition-fast);
-          z-index: 1;
+          padding: 0 14px;
+          gap: 8px;
+          justify-content: space-between;
+          flex-shrink: 0;
         }
-        .nexloan-sidebar__close:hover {
-          background: var(--surface-overlay);
-          color: var(--text-primary);
-        }
-
-        .nexloan-sidebar__header {
-          padding: var(--space-6) var(--space-6) var(--space-4);
-        }
-
-        .nexloan-sidebar__logo {
-          font-family: var(--font-display);
-          font-size: var(--text-2xl);
+        .sidebar__brand-name {
+          font-size: 15px;
           font-weight: 700;
-          color: var(--text-primary);
+          color: #111827;
           letter-spacing: -0.01em;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .sidebar__collapse-btn {
+          width: 26px; height: 26px;
+          border-radius: 6px;
+          border: 1px solid #E5E7EB;
+          background: #F9FAFB;
+          color: #6B7280;
+          cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+          transition: background 0.15s, color 0.15s;
+        }
+        .sidebar__collapse-btn:hover {
+          background: #F3F4F6;
+          color: #374151;
         }
 
-        .nexloan-sidebar__welcome {
-          font-size: var(--text-xs);
-          font-weight: 500;
-          color: var(--text-tertiary);
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          margin-top: var(--space-1);
-        }
-
-        .nexloan-sidebar__role-badge {
-          display: inline-block;
-          font-size: 10px;
-          font-weight: 700;
-          letter-spacing: 0.1em;
-          text-transform: uppercase;
-          border: 1px solid;
-          border-radius: 100px;
-          padding: 2px 10px;
-          margin-top: var(--space-2);
-        }
-
-        .nexloan-sidebar__nav {
-          flex: 1;
-          padding: var(--space-4);
-          display: flex;
-          flex-direction: column;
-          gap: var(--space-1);
-          overflow-y: auto;
-        }
-
-        .nexloan-sidebar__link {
-          display: flex;
-          align-items: center;
-          gap: var(--space-3);
-          padding: var(--space-3) var(--space-4);
-          border-radius: var(--radius-md);
-          color: var(--text-secondary);
-          font-weight: 500;
-          font-size: var(--text-sm);
-          text-decoration: none;
-          transition: all var(--transition-fast);
-          border-left: 3px solid transparent;
-        }
-
-        .nexloan-sidebar__link:hover {
-          color: var(--text-primary);
-          background: var(--surface-border);
-        }
-
-        .nexloan-sidebar__link--active {
-          color: var(--text-primary);
-          background: rgba(124, 58, 237, 0.10);
-          border-left-color: var(--accent-400);
-        }
-
-        .nexloan-sidebar__link-icon {
-          display: flex;
-          align-items: center;
+        /* Divider */
+        .sidebar__divider {
+          height: 1px;
+          background: #E5E7EB;
+          margin: 4px 0;
           flex-shrink: 0;
         }
 
-        .nexloan-sidebar__footer {
-          padding: var(--space-4);
-          border-top: 1px solid var(--surface-border);
-        }
-
-        .nexloan-sidebar__logout {
-          display: flex;
-          align-items: center;
-          gap: var(--space-3);
-          width: 100%;
-          padding: var(--space-3) var(--space-4);
-          border-radius: var(--radius-md);
-          background: none;
-          border: none;
-          color: var(--text-tertiary);
-          font-family: var(--font-body);
-          font-weight: 500;
-          font-size: var(--text-sm);
-          cursor: pointer;
-          transition: all var(--transition-fast);
-        }
-
-        .nexloan-sidebar__logout:hover {
-          color: var(--color-error);
-          background: rgba(239, 68, 68, 0.08);
-        }
-
-        .nexloan-sidebar__theme-toggle {
-          padding: var(--space-3) var(--space-6);
-          border-top: 1px solid var(--surface-border);
-        }
-
-        /* ── Mobile Bottom Nav ────────────── */
-        .nexloan-bottom-nav {
-          display: none;
-          position: fixed;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          z-index: 90;
-          background: var(--surface-raised);
-          border-top: 1px solid var(--surface-border);
-          padding: var(--space-2) 0;
-        }
-
-        .nexloan-bottom-nav__item {
+        /* Nav */
+        .sidebar__nav {
           display: flex;
           flex-direction: column;
-          align-items: center;
           gap: 2px;
-          padding: var(--space-1) var(--space-2);
-          color: var(--text-tertiary);
-          font-size: 10px;
-          font-weight: 500;
-          text-decoration: none;
-          background: none;
+          padding: 8px 8px;
+          overflow-y: auto;
+        }
+        .sidebar__nav-item {
+          height: 36px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 0 10px;
+          border-radius: 6px;
           border: none;
+          background: transparent;
+          color: #6B7280;
+          font-size: 14px;
+          font-weight: 500;
           cursor: pointer;
-          font-family: var(--font-body);
-          transition: color var(--transition-fast);
+          text-align: left;
+          white-space: nowrap;
+          transition: background 0.12s, color 0.12s;
+          width: 100%;
+          position: relative;
+        }
+        .sidebar__nav-item:hover {
+          background: #F9FAFB;
+          color: #374151;
+        }
+        .sidebar__nav-item--active {
+          background: #F3F4F6;
+          color: var(--sidebar-primary, #4F46E5);
+          border-left: 2px solid var(--sidebar-primary, #4F46E5);
+          padding-left: 8px;
+          font-weight: 600;
+        }
+        .sidebar__nav-icon {
+          position: relative;
+          width: 18px;
+          height: 18px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .sidebar__nav-label {
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
-        .nexloan-bottom-nav__item--active {
-          color: var(--accent-400);
+        /* Pending badge */
+        .sidebar__badge {
+          position: absolute;
+          top: -5px; right: -6px;
+          background: #DC2626;
+          color: white;
+          font-size: 9px;
+          font-weight: 700;
+          border-radius: 9999px;
+          padding: 1px 4px;
+          line-height: 1.4;
         }
 
-        .nexloan-bottom-nav__item:hover {
-          color: var(--text-primary);
+        /* Department */
+        .sidebar__dept {
+          padding: 10px 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        .sidebar__dept-label {
+          font-size: 10px;
+          font-weight: 600;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: #9CA3AF;
+        }
+        .sidebar__dept-value {
+          font-size: 13px;
+          font-weight: 500;
+          color: #374151;
         }
 
-        /* ── Responsive ──────────────────── */
-        @media (max-width: 640px) {
-          .nexloan-bottom-nav {
-            display: flex;
-            justify-content: space-around;
-            align-items: center;
+        /* Logout */
+        .sidebar__logout {
+          height: 40px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 0 14px;
+          margin: 6px 8px;
+          border-radius: 6px;
+          border: none;
+          background: transparent;
+          color: #6B7280;
+          font-size: 14px;
+          cursor: pointer;
+          transition: background 0.12s, color 0.12s;
+          width: calc(100% - 16px);
+          white-space: nowrap;
+        }
+        .sidebar__logout:hover {
+          background: #FEF2F2;
+          color: #DC2626;
+        }
+
+        /* Mobile: hidden by default, shown when isOpen */
+        .sidebar-overlay { display: none !important; }
+
+        @media (max-width: 1024px) {
+          .sidebar {
+            transform: translateX(-100%);
+            transition: transform 0.22s ease, width 0.22s ease;
+            width: var(--sidebar-width, 220px) !important;
+          }
+          .sidebar--mobile-open {
+            transform: translateX(0);
+          }
+          .sidebar-overlay {
+            display: block !important;
           }
         }
       `}</style>

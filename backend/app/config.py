@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     # OTP
     OTP_EXPIRE_SECONDS: int = 300  # 5 minutes
 
+    # White Label
+    TENANT_ID: str = "nexloan-default"
+
     class Config:
         env_file = ".env"
         case_sensitive = True

@@ -3,7 +3,7 @@
 @import "../styles/animations.css";
 
 /* ============================================================
-   NEXLOAN GLOBAL STYLES
+   NEXLOAN GLOBAL STYLES — Phase 2 Light Theme
    Base resets, body styles, custom scrollbar
    ============================================================ */
 
@@ -23,7 +23,7 @@ html {
 
 body {
   min-height: 100%;
-  background-color: transparent;
+  background-color: var(--surface-base);
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: var(--text-base);
@@ -37,28 +37,28 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--surface-overlay);
+  background: var(--surface-base);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--text-tertiary);
+  background: var(--surface-border-strong);
   border-radius: var(--radius-full);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary);
+  background: var(--text-tertiary);
 }
 
 /* Firefox */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--text-tertiary) var(--surface-overlay);
+  scrollbar-color: var(--surface-border-strong) var(--surface-base);
 }
 
 /* ── Selection ───────────────────────────────────────────── */
 ::selection {
-  background: var(--accent-500);
-  color: var(--neutral-0);
+  background: var(--accent-primary);
+  color: var(--text-on-accent);
 }
 
 /* ── Focus Ring ──────────────────────────────────────────── */
@@ -75,7 +75,7 @@ a {
 }
 
 a:hover {
-  color: var(--accent-300);
+  color: var(--accent-hover);
 }
 
 /* ── Utility Classes ─────────────────────────────────────── */
@@ -123,3 +123,21 @@ a:hover {
 .animate-message-in {
   animation: messageIn 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
+
+/* ── Phase 2 Utility Classes ────────────────────────────── */
+
+.section-heading {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-4);
+}
+
+.text-secondary { color: var(--text-secondary); }
+.text-tertiary { color: var(--text-tertiary); }
+.text-success { color: var(--color-success); }
+.text-warning { color: var(--color-warning); }
+.text-error { color: var(--color-error); }
+.bg-surface-sunken { background: var(--surface-sunken); }

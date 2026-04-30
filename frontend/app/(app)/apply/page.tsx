@@ -9,11 +9,13 @@ import Badge from '@/components/ui/Badge';
 import LoanSlider from '@/components/LoanSlider';
 import KYCUpload from '@/components/KYCUpload';
 import { loanAPI, coApplicantAPI } from '@/lib/api';
+import { useTenant } from '@/lib/tenant';
 
 const STEPS = ['Personal', 'Loan Detail', 'KYC', 'Confirm'];
 
 export default function ApplyPage() {
   const router = useRouter();
+  const tenant = useTenant();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -40,6 +42,10 @@ export default function ApplyPage() {
     tenure_months: 36,
     monthly_income: 50000,
     existing_emi: 0,
+    loan_type: 'NON_COLLATERAL' as string,
+    collateral_type: '' as string,
+    collateral_value: 0,
+    collateral_description: '' as string,
   });
 
   const [panFile, setPanFile] = useState<File | null>(null);
@@ -241,7 +247,7 @@ export default function ApplyPage() {
                     max="31"
                     className="apply-field__input"
                     required
-                    style={{ background: 'var(--surface-sunken)', border: '1px solid var(--surface-border)', color: 'white', padding: '12px 16px', borderRadius: '8px', width: '100%', fontSize: '15px' }}
+                    style={{ background: 'var(--surface-sunken)', border: '1px solid var(--surface-border)', color: 'var(--text-primary)', padding: '12px 16px', borderRadius: '8px', width: '100%', fontSize: '15px' }}
                   />
                   <input
                     type="number"
@@ -253,7 +259,7 @@ export default function ApplyPage() {
                     max={new Date().getFullYear() - 18}
                     className="apply-field__input"
                     required
-                    style={{ background: 'var(--surface-sunken)', border: '1px solid var(--surface-border)', color: 'white', padding: '12px 16px', borderRadius: '8px', width: '100%', fontSize: '15px' }}
+                    style={{ background: 'var(--surface-sunken)', border: '1px solid var(--surface-border)', color: 'var(--text-primary)', padding: '12px 16px', borderRadius: '8px', width: '100%', fontSize: '15px' }}
                   />
                 </div>
               </div>
@@ -386,6 +392,45 @@ export default function ApplyPage() {
                   <option value="Other">Other</option>
                 </select>
               </div>
+
+              {/* Collateral Loan Toggle */}
+              {tenant?.feature_collateral_loans && (
+                <div className="co-toggle">
+                  <div className="co-toggle__header" onClick={() => setFormData(p => ({ ...p, loan_type: p.loan_type === 'COLLATERAL' ? 'NON_COLLATERAL' : 'COLLATERAL' }))}>
+                    <div>
+                      <span className="co-toggle__title">Collateral Loan</span>
+                      <span className="co-toggle__hint">Pledge an asset for lower interest rates</span>
+                    </div>
+                    <div className={`co-toggle__switch ${formData.loan_type === 'COLLATERAL' ? 'co-toggle__switch--on' : ''}`}>
+                      <span className="co-toggle__knob" />
+                    </div>
+                  </div>
+                  {formData.loan_type === 'COLLATERAL' && (
+                    <div className="co-form animate-card-entrance">
+                      <div className="apply-grid-2">
+                        <div className="apply-field">
+                          <label className="apply-field__label">ASSET TYPE</label>
+                          <select name="collateral_type" value={formData.collateral_type} onChange={handleInputChange} className="apply-field__select" required>
+                            <option value="" disabled>Select asset type</option>
+                            <option value="GOLD">Gold</option>
+                            <option value="PROPERTY">Property</option>
+                            <option value="VEHICLE">Vehicle</option>
+                            <option value="FIXED_DEPOSIT">Fixed Deposit</option>
+                          </select>
+                        </div>
+                        <div className="apply-field">
+                          <label className="apply-field__label">ASSET VALUE (₹)</label>
+                          <input type="number" name="collateral_value" min={0} value={formData.collateral_value} onChange={handleInputChange} className="apply-field__date" required placeholder="Estimated value" />
+                        </div>
+                      </div>
+                      <div className="apply-field">
+                        <label className="apply-field__label">ASSET DESCRIPTION</label>
+                        <input type="text" name="collateral_description" value={formData.collateral_description} onChange={(e) => setFormData(p => ({ ...p, collateral_description: e.target.value }))} className="apply-field__date" placeholder="e.g. 24K gold jewellery, 50gm" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               {/* Co-Applicant Toggle */}
               <div className="co-toggle">
                 <div className="co-toggle__header" onClick={() => setHasCoApplicant(v => !v)}>

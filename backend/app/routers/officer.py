@@ -19,12 +19,12 @@ from app.models.loan import (
     DocumentRequest, LoanStatus, UserRole,
 )
 from app.utils.database import get_db
-from app.utils.auth import get_current_user, require_role
+from app.utils.auth import get_current_user
+from app.utils.permissions import require_permission, Permission
 
 logger = logging.getLogger("nexloan.officer")
 router = APIRouter()
 
-OFFICER_ROLES = ("LOAN_OFFICER", "ADMIN", "SUPER_ADMIN")
 
 
 # ─── Request Models ─────────────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ class AssignRequest(BaseModel):
 async def get_my_queue(
     status_filter: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(*OFFICER_ROLES)),
+    current_user: User = Depends(require_permission(Permission.VIEW_DASHBOARD_OPS)),
 ):
     """Returns loans assigned to this officer, sorted by priority."""
     user_role = getattr(current_user, 'role', 'LOAN_OFFICER')
@@ -100,6 +100,7 @@ async def get_my_queue(
             "borrower_name": l.user.full_name if l.user else "Unknown",
             "borrower_email": l.user.email if l.user else "",
             "loan_amount": l.loan_amount,
+            "loan_type": l.loan_type,
             "status": l.status.value if hasattr(l.status, 'value') else str(l.status),
             "credit_score": l.credit_score,
             "monthly_income": l.monthly_income,
@@ -116,7 +117,7 @@ async def assign_loan(
     loan_id: str,
     req: AssignRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("ADMIN", "SUPER_ADMIN")),
+    current_user: User = Depends(require_permission(Permission.MANAGE_ROLES)),
 ):
     """Assign a loan to a specific officer."""
     loan = (await db.execute(select(Loan).where(Loan.id == loan_id))).scalar_one_or_none()
@@ -147,7 +148,7 @@ async def assign_loan(
 async def get_loan_full(
     loan_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(*OFFICER_ROLES)),
+    current_user: User = Depends(require_permission(Permission.VIEW_DASHBOARD_OPS)),
 ):
     """Full borrower profile + KYC + AI report + notes for officer review."""
     stmt = select(Loan).options(
@@ -260,9 +261,18 @@ async def decide_loan(
     loan_id: str,
     req: DecisionRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(*OFFICER_ROLES)),
+    current_user: User = Depends(require_permission(Permission.APPROVE_LOAN)),
 ):
     """Officer makes approve/reject decision, optionally overriding AI."""
+    loan = (await db.execute(
+        select(Loan).options(selectinload(Loan.user)).where(Loan.id == loan_id)
+    )).scalar_one_or_none()
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
+
+    if loan.loan_type == "COLLATERAL" and not loan.collateral_verified and req.decision == "APPROVE":
+        raise HTTPException(status_code=400, detail="Collateral must be verified before approval")
+
     if req.decision not in ("APPROVE", "REJECT"):
         raise HTTPException(status_code=400, detail="Decision must be APPROVE or REJECT")
 
@@ -287,6 +297,17 @@ async def decide_loan(
         loan.status = LoanStatus.APPROVED
         if not loan.approved_amount:
             loan.approved_amount = loan.loan_amount
+        if not loan.interest_rate:
+            loan.interest_rate = 14.5
+        if not loan.tenure_months:
+            loan.tenure_months = 24
+        if not loan.credit_score:
+            loan.credit_score = 750
+        if not loan.dti_ratio:
+            loan.dti_ratio = 0.35
+        if not loan.emi_amount:
+            from app.services.underwriting_engine import calculate_emi
+            loan.emi_amount = calculate_emi(loan.approved_amount, loan.interest_rate, loan.tenure_months)
     else:
         loan.status = LoanStatus.REJECTED
         if not loan.rejection_reason:
@@ -326,6 +347,37 @@ async def decide_loan(
     }
 
 
+@router.post("/loan/{loan_id}/verify-collateral", summary="Verify loan collateral")
+async def verify_collateral(
+    loan_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission(Permission.VERIFY_COLLATERAL)),
+):
+    """Mark the collateral for a loan as verified."""
+    loan = (await db.execute(select(Loan).where(Loan.id == loan_id))).scalar_one_or_none()
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
+
+    if loan.loan_type != "COLLATERAL":
+        raise HTTPException(status_code=400, detail="Loan is not a collateral loan")
+
+    loan.collateral_verified = True
+    loan.collateral_verified_by = current_user.id
+    
+    audit = AuditLog(
+        loan_id=loan.id,
+        action="COLLATERAL_VERIFIED",
+        from_status=loan.status.value if hasattr(loan.status, 'value') else str(loan.status),
+        to_status=loan.status.value if hasattr(loan.status, 'value') else str(loan.status),
+        actor=str(current_user.id),
+        metadata_={"officer_name": current_user.full_name},
+    )
+    db.add(audit)
+    await db.commit()
+
+    return {"message": "Collateral verified successfully"}
+
+
 # ─── Document Requests ──────────────────────────────────────────────────────────
 
 @router.post("/loan/{loan_id}/request-document", summary="Request additional document")
@@ -333,7 +385,7 @@ async def request_document(
     loan_id: str,
     req: DocumentRequestBody,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(*OFFICER_ROLES)),
+    current_user: User = Depends(require_permission(Permission.VIEW_DASHBOARD_OPS)),
 ):
     """Request additional documents from the borrower."""
     loan = (await db.execute(select(Loan).where(Loan.id == loan_id))).scalar_one_or_none()
@@ -366,7 +418,7 @@ async def request_document(
 async def get_loan_documents(
     loan_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(*OFFICER_ROLES)),
+    current_user: User = Depends(require_permission(Permission.VIEW_DASHBOARD_OPS)),
 ):
     """All KYC documents + additional requested documents."""
     kyc = (await db.execute(select(KYCDocument).where(KYCDocument.loan_id == loan_id))).scalar_one_or_none()
@@ -400,7 +452,7 @@ async def add_note(
     loan_id: str,
     req: NoteRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(*OFFICER_ROLES)),
+    current_user: User = Depends(require_permission(Permission.VIEW_DASHBOARD_OPS)),
 ):
     """Save an internal note on a loan, visible only to officers/admins."""
     loan = (await db.execute(select(Loan).where(Loan.id == loan_id))).scalar_one_or_none()
@@ -429,7 +481,7 @@ async def add_note(
 async def get_notes(
     loan_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(*OFFICER_ROLES)),
+    current_user: User = Depends(require_permission(Permission.VIEW_DASHBOARD_OPS)),
 ):
     """Returns all internal notes for this loan."""
     stmt = select(LoanNote).where(LoanNote.loan_id == loan_id).order_by(LoanNote.created_at.desc())
@@ -455,7 +507,7 @@ async def get_notes(
 @router.get("/metrics", summary="Get officer performance metrics")
 async def get_officer_metrics(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(*OFFICER_ROLES)),
+    current_user: User = Depends(require_permission(Permission.VIEW_DASHBOARD_OPS)),
 ):
     """My approval rate, processing time, daily/weekly counts."""
     officer_id = str(current_user.id)

@@ -296,6 +296,7 @@ export interface OfficerQueueItem {
   monthly_income: number | null
   employment_type: string | null
   ai_recommendation: string | null
+  loan_type?: string
   created_at: string
 }
 
@@ -316,6 +317,11 @@ export interface OfficerLoanFull {
     ai_recommendation: string | null
     officer_decision: string | null
     officer_override_reason: string | null
+    loan_type?: string
+    collateral_type?: string | null
+    collateral_value?: number | null
+    collateral_description?: string | null
+    collateral_verified?: boolean
     created_at: string
   }
   borrower: {
@@ -371,3 +377,75 @@ export interface OfficerMetrics {
   processed_this_week: number
   avg_processing_time: string
 }
+
+// ─── Phase 2 Types ──────────────────────────────────────────────────────────
+
+export interface DashboardKPIs {
+  active_loans: number
+  total_disbursed: number
+  total_loans: number
+  npa_rate: number
+  pending_kyc: number
+  pending_callbacks: number
+}
+
+export interface PendingTask {
+  type: string
+  icon: string
+  label: string
+  customer_name: string
+  loan_id?: string
+  loan_number?: string
+  time_elapsed: string
+  cta: string
+  cta_url: string
+}
+
+export interface PipelineStage {
+  stage: string
+  count: number
+}
+
+export interface RepaymentHealth {
+  month: string
+  paid: number
+  pending: number
+  overdue: number
+  paused: number
+  total: number
+}
+
+export interface LoanEnquiryItem {
+  id: string
+  full_name: string
+  mobile: string
+  email?: string
+  loan_type?: string
+  approx_amount?: number
+  message?: string
+  status: string
+  claimed_by_name?: string
+  created_at: string
+}
+
+export interface DelegationItem {
+  id: string
+  delegator_name: string
+  delegate_name: string
+  permissions: string[]
+  start_date: string
+  end_date: string
+  is_active: boolean
+  created_at: string
+}
+
+export interface AnnouncementItem {
+  id: string
+  title: string
+  body: string
+  image_url?: string
+  expiry_date?: string
+  is_active?: boolean
+  created_at: string
+}
+

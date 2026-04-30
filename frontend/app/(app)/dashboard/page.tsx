@@ -1,701 +1,446 @@
-"use client";
+'use client';
 
-import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { loanAPI, underwritingAPI, disbursementAPI, servicingAPI, closureAPI, downloadReport } from "@/lib/api";
-import { useToast } from "@/components/ToastProvider";
-import Button from "@/components/ui/Button";
-import Card from "@/components/ui/Card";
-import Badge from "@/components/ui/Badge";
-import CreditScoreGauge from "@/components/CreditScoreGauge";
-import EMIScheduleTable from "@/components/EMIScheduleTable";
-import AuditTrail from "@/components/AuditTrail";
-import dynamic from 'next/dynamic';
-const CreditCoin3D = dynamic(() => import('@/components/3d/CreditCoin3D'), { ssr: false });
-import CounterOfferBanner from "@/components/dashboard/CounterOfferBanner";
-import EMIPauseModal from "@/components/dashboard/EMIPauseModal";
-import HealthDashboard from "@/components/dashboard/HealthDashboard";
-import { SkeletonCard, SkeletonText } from "@/components/SkeletonLoader";
-import type { AuditLogEntry } from "@/types/loan";
-import LoanTracker from "@/components/dashboard/LoanTracker";
-import EMICalendar from "@/components/dashboard/EMICalendar";
-import PrepaymentCalculator from "@/components/dashboard/PrepaymentCalculator";
-import LoanDocuments from "@/components/dashboard/LoanDocuments";
-import SupportTickets from "@/components/dashboard/SupportTickets";
-import ReferralSection from "@/components/dashboard/ReferralSection";
-import PaymentHistory from "@/components/dashboard/PaymentHistory";
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useTenant } from '@/lib/tenant';
+
+interface PendingTask {
+  type: string; icon: string; label: string;
+  customer_name: string; loan_id?: string;
+  loan_number?: string; time_elapsed: string;
+  cta: string; cta_url: string;
+}
+interface KPIs {
+  active_loans: number; total_disbursed: number;
+  total_loans: number; npa_rate: number;
+  pending_kyc: number; pending_callbacks: number;
+}
+interface Loan {
+  id: string; loan_number: string; loan_amount: number;
+  loan_type: string; status: string; tenure_months: number;
+  interest_rate: number; disbursed_amount?: number;
+  total_paid?: number; monthly_emi?: number;
+  created_at: string; credit_score?: number; dti_ratio?: number;
+}
+interface EMI {
+  installment_no: number; due_date: string; emi_amount: number;
+  principal: number; interest: number; status: string;
+  outstanding_balance: number;
+}
+
+const STATUS_STEPS = [
+  'INQUIRY','APPLICATION','KYC_PENDING','KYC_VERIFIED',
+  'UNDERWRITING','APPROVED','DISBURSED','ACTIVE',
+];
+const STATUS_LABELS: Record<string,string> = {
+  INQUIRY:'Inquiry', APPLICATION:'Application', KYC_PENDING:'KYC',
+  KYC_VERIFIED:'KYC Verified', UNDERWRITING:'Underwriting',
+  APPROVED:'Approved', COUNTER_OFFERED:'Counter Offer',
+  DISBURSED:'Disbursed', ACTIVE:'Active', REJECTED:'Rejected',
+  PRE_CLOSED:'Pre-Closed', CLOSED:'Closed',
+};
+const TASK_ICONS: Record<string,string> = {
+  document:'📄', phone:'📞', ticket:'🎫',
+  alert:'⚠️', closure:'🔒', default:'📋',
+};
+
+function fmtINR(n: number) {
+  return '₹' + Math.round(n).toLocaleString('en-IN');
+}
+function fmtPct(n: number) { return n.toFixed(1) + '%'; }
 
 export default function DashboardPage() {
-  const { showToast } = useToast();
   const router = useRouter();
+  const tenant = useTenant();
+  const [role, setRole] = useState('BORROWER');
+  const [tasks, setTasks] = useState<PendingTask[]>([]);
+  const [kpis, setKpis] = useState<KPIs | null>(null);
+  const [loans, setLoans] = useState<Loan[]>([]);
+  const [emis, setEmis] = useState<EMI[]>([]);
+  const [busy, setBusy] = useState(true);
 
-  const [loan, setLoan] = useState<any>(null);
-  const [schedule, setSchedule] = useState<any[]>([]);
-  const [quote, setQuote] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingSchedule, setLoadingSchedule] = useState(false);
-  const [processing, setProcessing] = useState(false);
-  const [auditTrailLogs, setAuditTrailLogs] = useState<AuditLogEntry[]>([]);
-  const [showKFS, setShowKFS] = useState(false);
-  const [showEMIPause, setShowEMIPause] = useState(false);
+  const isOps = ['LOAN_OFFICER','VERIFIER','UNDERWRITER','ADMIN','SUPER_ADMIN'].includes(role);
 
   useEffect(() => {
-    const fetchLoan = async () => {
+    const u = localStorage.getItem('nexloan_user');
+    if (u) { try { setRole(JSON.parse(u).role || 'BORROWER'); } catch {} }
+
+    const token = localStorage.getItem('nexloan_token');
+    if (!token) return;
+    const h = { Authorization: `Bearer ${token}` };
+
+    const base = process.env.NEXT_PUBLIC_API_URL || '';
+
+    const fetchAll = async () => {
       try {
-        const token = localStorage.getItem("nexloan_token");
-        // DEV BYPASS: Removed the auth redirect block
+        const [taskRes, kpiRes] = await Promise.all([
+          fetch(`${base}/api/dashboard/pending-tasks`, { headers: h }),
+          fetch(`${base}/api/dashboard/kpis`, { headers: h }),
+        ]);
+        if (taskRes.ok) setTasks(await taskRes.json());
+        if (kpiRes.ok) setKpis(await kpiRes.json());
 
-        const res = await loanAPI.getMyLoans();
-        const loans = res.data;
-        if (loans && loans.length > 0) {
-          const activeLoan = loans[0];
-          setLoan(activeLoan);
-          
-          if (activeLoan.status === "ACTIVE") {
-            setLoadingSchedule(true);
-            try {
-              const sched = await servicingAPI.getSchedule(activeLoan.id);
-              setSchedule(sched.data);
-            } catch (err) {
-              console.error("Failed to load schedule", err);
-            } finally {
-              setLoadingSchedule(false);
-            }
-          }
-
-          try {
-            const logs = await loanAPI.getAuditTrail(activeLoan.id);
-            setAuditTrailLogs(logs.data);
-          } catch(err) {
-            console.error("Failed to load audit trail", err);
+        // Borrower: fetch own loans
+        const loanRes = await fetch(`${base}/api/application/my-loans`, { headers: h });
+        if (loanRes.ok) {
+          const data = await loanRes.json();
+          setLoans(Array.isArray(data) ? data : [data]);
+          // fetch EMIs for active loan
+          const active = Array.isArray(data) ? data.find((l: Loan) => l.status === 'ACTIVE') : null;
+          if (active) {
+            const emiRes = await fetch(`${base}/api/servicing/${active.id}/schedule`, { headers: h });
+            if (emiRes.ok) setEmis(await emiRes.json());
           }
         }
-      } catch (err) {
-        console.error("Failed to load loans", err);
-      } finally {
-        setLoading(false);
-      }
+      } catch {}
+      setBusy(false);
     };
-    fetchLoan();
-  }, [router]);
+    fetchAll();
+  }, []);
 
-  const handleRunUnderwriting = async () => {
-    try {
-      setProcessing(true);
-      await underwritingAPI.evaluate(loan.id);
-      window.location.reload();
-    } catch (err) {
-      console.error(err);
-      showToast("Evaluation failed. Make sure KYC is verified.", "error");
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const handleDisburse = async () => {
-    try {
-      setProcessing(true);
-      await disbursementAPI.disburse(loan.id, { account_number: 'SIM_DEMO_ACCT' });
-      window.location.reload();
-    } catch (err) {
-      console.error(err);
-      showToast("Disbursement failed.", "error");
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const reloadSchedule = async () => {
-    try {
-      const res = await servicingAPI.getSchedule(loan.id);
-      setSchedule(res.data);
-      setQuote(null);
-    } catch (err) {
-       console.error(err);
-    }
-  };
-
-  const handleGetQuote = async () => {
-    try {
-      setProcessing(true);
-      const res = await closureAPI.getPreclosureQuote(loan.id);
-      setQuote(res.data);
-    } catch (err) {
-      console.error(err);
-      showToast("Failed to fetch settlement quote.", "error");
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const handleCloseLoan = async () => {
-    if (!confirm("Are you sure you want to completely settle and close this loan?")) return;
-    try {
-      setProcessing(true);
-      await closureAPI.closeLoan(loan.id);
-      router.push(`/closure?id=${loan.id}`);
-    } catch (err) {
-      console.error(err);
-      showToast("Failed to process loan closure.", "error");
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const getStatusVariant = (s: string): 'success' | 'error' | 'warning' | 'info' | 'accent' => {
-    switch(s) {
-      case 'APPROVED': case 'ACTIVE': case 'CLOSED': return 'success';
-      case 'REJECTED': return 'error';
-      case 'COUNTER_OFFERED': return 'warning';
-      case 'KYC_PENDING': case 'PENDING': return 'warning';
-      default: return 'info';
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="dashboard-grid">
-        <div style={{ gridColumn: '1 / -1', marginBottom: 'var(--space-6)' }}>
-          <SkeletonText className="w-1/3 h-8" />
-        </div>
-        <SkeletonCard />
-        <SkeletonCard />
-      </div>
-    );
-  }
-
-  if (!loan) {
-    return (
-      <div className="dashboard-empty">
-        <h1 className="dashboard-header__title" style={{ marginBottom: 'var(--space-6)' }}>Dashboard</h1>
-        <Card className="text-center py-12">
-          <p className="text-secondary mb-6">You do not have any active loan applications.</p>
-          <Button onClick={() => router.push("/apply")}>Apply Now</Button>
-        </Card>
-      </div>
-    );
-  }
+  const primary = tenant.primary_color || '#4F46E5';
+  const activeLoan = loans.find(l => l.status === 'ACTIVE') || loans[0];
 
   return (
-    <div className="dashboard-container">
-      {/* ── Header ─────────────────────────── */}
-      <div className="dashboard-header">
-        <div>
-          <h1 className="dashboard-header__title">Your Dashboard</h1>
-          <button 
-            onClick={() => downloadReport(loan.id, loan.loan_number)}
-            className="dashboard-header__download"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-            Download Report
-          </button>
-        </div>
-        <Badge variant={getStatusVariant(loan.status)}>{loan.status.replace(/_/g, ' ')}</Badge>
+    <div style={{ maxWidth: 1100 }}>
+      {/* ── Page Header ────────────────────── */}
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111827', marginBottom: 4 }}>Dashboard</h1>
+        <p style={{ fontSize: 14, color: '#6B7280' }}>
+          {isOps ? 'Operations overview — pending tasks and portfolio health.'
+            : 'Your loan summary and upcoming payments.'}
+        </p>
       </div>
 
-      <div className="dashboard-grid">
-        {/* ── Loan Journey Tracker (collapsible) ── */}
-        {loan && (
-          <div style={{ gridColumn: '1 / -1', marginBottom: 'var(--space-2)' }}>
-            <Card>
-              <LoanTracker loanId={loan.id} compact={true} />
-            </Card>
+      {/* ── Pending Tasks (hidden if zero) ─── */}
+      {tasks.length > 0 && (
+        <div style={{ marginBottom: 28 }}>
+          <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em',
+            color: '#9CA3AF', marginBottom: 12 }}>Pending Tasks</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {tasks.slice(0, 8).map((t, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', gap: 14,
+                background: '#fff', border: '1px solid #E5E7EB',
+                borderRadius: 8, padding: '12px 16px',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+              }}>
+                <span style={{ fontSize: 20 }}>{TASK_ICONS[t.icon] || TASK_ICONS.default}</span>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: '#111827', marginBottom: 2 }}>{t.label}</p>
+                  <p style={{ fontSize: 13, color: '#6B7280' }}>
+                    {t.customer_name}{t.loan_number ? ` · ${t.loan_number}` : ''} · {t.time_elapsed}
+                  </p>
+                </div>
+                <button
+                  onClick={() => router.push(t.cta_url)}
+                  style={{
+                    padding: '7px 16px', borderRadius: 6,
+                    background: primary, color: '#fff',
+                    border: 'none', fontSize: 13, fontWeight: 600,
+                    cursor: 'pointer', whiteSpace: 'nowrap',
+                  }}>
+                  {t.cta}
+                </button>
+              </div>
+            ))}
           </div>
-        )}
-
-        {/* ── Left Column: Summary ─────────── */}
-        <div className="dashboard-col">
-          <Card variant="elevated" className="h-full flex flex-col justify-between">
-            <div>
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <p className="label-caps mb-1">Loan Reference</p>
-                  <p className="mono-number font-bold text-lg">{loan.loan_number}</p>
-                </div>
-                <div className="text-right">
-                  <p className="label-caps mb-1">Created On</p>
-                  <p className="font-medium text-sm text-secondary">{new Date(loan.created_at).toLocaleDateString('en-IN')}</p>
-                </div>
-              </div>
-
-              <div className="dashboard-metrics-grid">
-                <div className="metric-box">
-                  <span className="label-caps">Requested</span>
-                  <span className="metric-value mono-number">₹{loan.loan_amount.toLocaleString('en-IN')}</span>
-                </div>
-                {loan.approved_amount && (
-                  <div className="metric-box">
-                    <span className="label-caps">Approved</span>
-                    <span className="metric-value metric-value--success mono-number">₹{loan.approved_amount.toLocaleString('en-IN')}</span>
-                  </div>
-                )}
-                <div className="metric-box">
-                  <span className="label-caps">Tenure</span>
-                  <span className="metric-value font-bold">{loan.tenure_months} MO</span>
-                </div>
-                {loan.interest_rate && (
-                  <div className="metric-box">
-                    <span className="label-caps">Interest</span>
-                    <span className="metric-value metric-value--accent">{loan.interest_rate}% p.a.</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Action Cards based on Status — Removed top divider line */}
-            <div className="mt-6">
-              {(loan.status === "KYC_VERIFIED" || loan.status === "KYC_PENDING") && (
-                <div className="action-panel action-panel--warning">
-                  <h3 className="action-panel__title">Underwriting Required</h3>
-                  <p className="action-panel__desc">Run our automated risk evaluation engine to proceed.</p>
-                  <Button fullWidth onClick={handleRunUnderwriting} loading={processing}>Run Engine</Button>
-                </div>
-              )}
-
-              {loan.status === "APPROVED" && (
-                <div className="action-panel action-panel--success">
-                  <h3 className="action-panel__title">Ready for Disbursement</h3>
-                  <p className="action-panel__desc">Review and accept the Key Fact Statement (KFS) terms.</p>
-                  <Button fullWidth variant="primary" onClick={() => setShowKFS(true)}>Review KFS</Button>
-                </div>
-              )}
-
-              {loan.status === "REJECTED" && (
-                <div className="action-panel action-panel--error">
-                  <h3 className="action-panel__title">Application Rejected</h3>
-                  <p className="action-panel__desc">{loan.rejection_reason}</p>
-                  {loan.improvement_plan && (
-                    <div style={{ marginTop: '16px', padding: '16px', background: 'var(--surface-sunken)', borderRadius: 'var(--radius-lg)' }}>
-                      <p style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-tertiary)', marginBottom: '8px' }}>Your Improvement Plan</p>
-                      <p style={{ fontSize: '14px', color: 'var(--text-secondary)', whiteSpace: 'pre-line', lineHeight: 1.6 }}>{loan.improvement_plan}</p>
-                    </div>
-                  )}
-                  {loan.reapply_reminder_date && (
-                    <p style={{ marginTop: '12px', fontSize: '13px', color: 'var(--text-tertiary)' }}>You can reapply after {new Date(loan.reapply_reminder_date).toLocaleDateString('en-IN')}</p>
-                  )}
-                </div>
-              )}
-
-              {loan.status === "COUNTER_OFFERED" && (
-                <CounterOfferBanner
-                  loanId={loan.id}
-                  loanNumber={loan.loan_number}
-                  originalAmount={loan.loan_amount}
-                  counterAmount={loan.counter_offer_amount}
-                  counterRate={loan.counter_offer_rate}
-                  onAccepted={() => window.location.reload()}
-                  onDeclined={() => window.location.reload()}
-                />
-              )}
-
-              {loan.status === "ACTIVE" && (
-                <div className="action-panel action-panel--info">
-                  <div className="flex w-full justify-between items-start">
-                    <div>
-                      <h3 className="action-panel__title">Loan is Active</h3>
-                      <p className="action-panel__desc mb-4">Disbursed on {new Date(loan.disbursed_at).toLocaleDateString('en-IN')}.</p>
-                    </div>
-                    <CreditCoin3D />
-                  </div>
-                  
-                  {!quote ? (
-                    <Button variant="secondary" size="sm" fullWidth onClick={handleGetQuote} loading={processing}>
-                      Get Pre-closure Quote
-                    </Button>
-                  ) : (
-                    <div className="quote-box animate-card-entrance">
-                      <div className="quote-row">
-                        <span>Principal</span>
-                        <span className="mono-number font-bold">₹{quote.outstanding_principal.toLocaleString('en-IN')}</span>
-                      </div>
-                      <div className="quote-row">
-                        <span>Fee (2%)</span>
-                        <span className="mono-number font-bold border-b pb-1">₹{quote.preclosure_charge.toLocaleString('en-IN')}</span>
-                      </div>
-                      <div className="quote-row quote-row--total mt-2 pt-2">
-                        <span>Total Payable</span>
-                        <span className="mono-number font-bold">₹{quote.total_payable.toLocaleString('en-IN')}</span>
-                      </div>
-                      <div className="mt-4">
-                        <Button fullWidth onClick={handleCloseLoan} loading={processing}>Confirm & Settle</Button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Cooling-off */}
-                  {loan.disbursed_at && (new Date().getTime() - new Date(loan.disbursed_at).getTime() <= 3 * 24 * 60 * 60 * 1000) && (
-                    <div className="mt-4 text-center">
-                      <button onClick={handleCloseLoan} disabled={processing} className="text-xs text-warning hover:underline font-medium">
-                        Cancel Loan (Cooling-off)
-                      </button>
-                    </div>
-                  )}
-
-                  {/* EMI Pause */}
-                  <div style={{ marginTop: '16px' }}>
-                    <Button variant="secondary" size="sm" onClick={() => setShowEMIPause(true)}>
-                      ⏸ Pause Next EMI
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </Card>
         </div>
+      )}
 
-        {/* ── Right Column: Graphs & Audit ─── */}
-        <div className="dashboard-col">
-          <Card>
-            {loan.credit_score ? (
-              <CreditScoreGauge score={loan.credit_score} />
-            ) : (
-              <div className="h-48 flex items-center justify-center text-tertiary text-sm italic">
-                Underwriting pending...
+      {/* ── Ops KPI Cards ──────────────────── */}
+      {isOps && kpis && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16, marginBottom: 28 }}>
+          {[
+            { label: 'Active Loans', value: kpis.active_loans.toLocaleString(), color: '#059669' },
+            { label: 'Total Disbursed', value: fmtINR(kpis.total_disbursed), color: primary },
+            { label: 'Total Applications', value: kpis.total_loans.toLocaleString(), color: '#2563EB' },
+            { label: 'NPA Rate', value: fmtPct(kpis.npa_rate), color: kpis.npa_rate > 5 ? '#DC2626' : '#059669' },
+            { label: 'KYC Pending', value: kpis.pending_kyc.toLocaleString(), color: '#D97706' },
+            { label: 'Callbacks', value: kpis.pending_callbacks.toLocaleString(), color: '#7C3AED' },
+          ].map(card => (
+            <div key={card.label} style={{
+              background: '#fff', border: '1px solid #E5E7EB',
+              borderRadius: 8, padding: '16px 18px',
+            }}>
+              <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase',
+                letterSpacing: '0.06em', color: '#9CA3AF', marginBottom: 8 }}>{card.label}</p>
+              <p style={{ fontSize: 22, fontWeight: 700, color: card.color, fontFamily: 'monospace' }}>{card.value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Borrower: Loan Summary ─────────── */}
+      {!isOps && activeLoan && (
+        <>
+          {/* 3-card row */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16, marginBottom: 28 }}>
+            <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 8, padding: '16px 18px' }}>
+              <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em',
+                color: '#9CA3AF', marginBottom: 8 }}>Loan Amount</p>
+              <p style={{ fontSize: 24, fontWeight: 700, color: primary }}>{fmtINR(activeLoan.loan_amount)}</p>
+              <p style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>{activeLoan.loan_type || 'Personal Loan'}</p>
+            </div>
+            {activeLoan.credit_score && (
+              <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 8, padding: '16px 18px' }}>
+                <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em',
+                  color: '#9CA3AF', marginBottom: 8 }}>Credit Score</p>
+                <p style={{ fontSize: 24, fontWeight: 700,
+                  color: activeLoan.credit_score >= 750 ? '#059669' : activeLoan.credit_score >= 650 ? '#D97706' : '#DC2626' }}>
+                  {activeLoan.credit_score}
+                </p>
+                <p style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>
+                  {activeLoan.credit_score >= 750 ? 'Excellent' : activeLoan.credit_score >= 650 ? 'Good' : 'Needs Improvement'}
+                </p>
               </div>
             )}
-          </Card>
-
-          <Card>
-             <AuditTrail entries={auditTrailLogs} />
-          </Card>
-        </div>
-      </div>
-
-      {/* ── Bottom Section: Schedule ──────── */}
-      {loan.status === "ACTIVE" && (
-        <div className="mt-8">
-          <h2 className="text-xl font-semibold mb-4">EMI Schedule</h2>
-          <Card padding="md">
-            {loadingSchedule ? (
-              <div className="animate-pulse space-y-4">
-                <div className="h-8 bg-surface-sunken rounded w-full" />
-                <div className="h-8 bg-surface-sunken rounded w-full" />
-                <div className="h-8 bg-surface-sunken rounded w-full" />
+            {activeLoan.monthly_emi && (
+              <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 8, padding: '16px 18px' }}>
+                <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em',
+                  color: '#9CA3AF', marginBottom: 8 }}>Monthly EMI</p>
+                <p style={{ fontSize: 24, fontWeight: 700, color: '#111827' }}>{fmtINR(activeLoan.monthly_emi)}</p>
+                <p style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>{activeLoan.tenure_months} months · {activeLoan.interest_rate}% p.a.</p>
               </div>
-            ) : (
-              <EMIScheduleTable schedule={schedule} loanId={loan.id} onRefresh={reloadSchedule} />
             )}
-          </Card>
-          <PaymentHistory loanId={loan.id} />
-        </div>
-      )}
-
-      {/* ── Financial Health Dashboard ────── */}
-      {loan.status === "ACTIVE" && (
-        <div className="mt-8">
-          <HealthDashboard loanId={loan.id} />
-        </div>
-      )}
-
-      {/* ── EMI Pause Modal ──────────────── */}
-      {showEMIPause && loan.status === "ACTIVE" && (
-        <EMIPauseModal
-          loanId={loan.id}
-          nextEmiAmount={loan.emi_amount || 0}
-          nextDueDate={schedule.find((s: any) => s.status === 'PENDING')?.due_date ? new Date(schedule.find((s: any) => s.status === 'PENDING')?.due_date).toLocaleDateString('en-IN') : 'N/A'}
-          pausesUsed={loan.emi_pauses_used || 0}
-          onClose={() => setShowEMIPause(false)}
-          onPaused={() => { reloadSchedule(); window.location.reload(); }}
-        />
-      )}
-
-      {/* ── Phase 2: EMI Calendar ──────────── */}
-      {loan.status === "ACTIVE" && schedule.length > 0 && (
-        <div className="mt-8">
-          <h2 className="section-heading">EMI CALENDAR</h2>
-          <EMICalendar schedule={schedule} />
-        </div>
-      )}
-
-      {/* ── Phase 2: Prepayment Calculator ─── */}
-      {loan.status === "ACTIVE" && schedule.length > 0 && (() => {
-        const pendingEMIs = schedule.filter(s => s.status === 'PENDING');
-        const outstanding = pendingEMIs.length > 0 ? pendingEMIs[0].outstanding_balance : 0;
-        const monthlyRate = (loan.interest_rate || 15) / (12 * 100);
-        return outstanding > 0 ? (
-          <div className="mt-8">
-            <h2 className="section-heading">PREPAYMENT CALCULATOR</h2>
-            <PrepaymentCalculator
-              outstandingBalance={outstanding}
-              monthlyRate={monthlyRate}
-              remainingMonths={pendingEMIs.length}
-              emiAmount={loan.emi_amount}
-            />
           </div>
-        ) : null;
-      })()}
 
-      {/* ── Phase 2: Loan Documents ─────────── */}
-      {loan && (
-        <div className="mt-8">
-          <h2 className="section-heading">LOAN DOCUMENTS</h2>
-          <LoanDocuments loanId={loan.id} loanStatus={loan.status} />
-        </div>
-      )}
-
-      {/* ── Phase 2: Support ────────────────── */}
-      <div className="mt-8">
-        <h2 className="section-heading">SUPPORT</h2>
-        <SupportTickets />
-      </div>
-
-      {/* ── Phase 2: Referral ────────────────── */}
-      <div className="mt-8">
-        <h2 className="section-heading">REFER & EARN</h2>
-        <ReferralSection />
-      </div>
-
-      {/* ── Modal: KFS ────────────────────── */}
-      {showKFS && (
-        <div className="modal-overlay">
-          <div className="modal-content animate-card-entrance">
-            <div className="modal-header">
-              <div>
-                <h2 className="text-xl font-bold">Key Fact Statement</h2>
-                <p className="text-xs text-tertiary">Standard RBI Format</p>
-              </div>
-              <button onClick={() => setShowKFS(false)} className="modal-close">×</button>
+          {/* Loan Status Timeline */}
+          <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 8, padding: '20px 24px', marginBottom: 28 }}>
+            <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em',
+              color: '#9CA3AF', marginBottom: 20 }}>Application Progress</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 0, overflowX: 'auto', paddingBottom: 4 }}>
+              {STATUS_STEPS.map((step, i) => {
+                const steps = STATUS_STEPS;
+                const currentIdx = steps.indexOf(activeLoan.status);
+                const isCompleted = i < currentIdx;
+                const isCurrent = i === currentIdx;
+                const isFuture = i > currentIdx;
+                return (
+                  <div key={step} style={{ display: 'flex', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 72 }}>
+                      <div style={{
+                        width: 28, height: 28, borderRadius: '50%',
+                        background: isCompleted ? '#059669' : isCurrent ? primary : '#F3F4F6',
+                        border: `2px solid ${isCompleted ? '#059669' : isCurrent ? primary : '#E5E7EB'}`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 13, color: isCompleted || isCurrent ? '#fff' : '#9CA3AF',
+                        transition: 'all 0.2s',
+                      }}>
+                        {isCompleted ? '✓' : i + 1}
+                      </div>
+                      <p style={{ fontSize: 10, marginTop: 6, color: isCurrent ? primary : isCompleted ? '#059669' : '#9CA3AF',
+                        fontWeight: isCurrent ? 700 : 500, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        {STATUS_LABELS[step]}
+                      </p>
+                    </div>
+                    {i < STATUS_STEPS.length - 1 && (
+                      <div style={{
+                        height: 2, width: 24, flexShrink: 0, marginBottom: 20,
+                        background: isCompleted ? '#059669' : '#E5E7EB',
+                        transition: 'background 0.2s',
+                      }} />
+                    )}
+                  </div>
+                );
+              })}
             </div>
+            {activeLoan.status === 'REJECTED' && (
+              <div style={{ marginTop: 16, padding: '10px 14px', background: '#FEF2F2',
+                borderRadius: 6, border: '1px solid #FECACA' }}>
+                <p style={{ fontSize: 13, color: '#DC2626', fontWeight: 500 }}>
+                  Loan Status: {STATUS_LABELS[activeLoan.status]}
+                </p>
+              </div>
+            )}
             
-            <div className="modal-body space-y-4">
-              <div className="kfs-box">
-                <h3 className="kfs-title">1. Loan Details</h3>
-                <div className="kfs-grid">
-                  <span>Loan Amount</span> <span className="font-mono text-right font-medium">₹{loan.approved_amount?.toLocaleString('en-IN')}</span>
-                  <span>Tenure</span> <span className="text-right font-medium">{loan.tenure_months} Months</span>
-                  <span>Interest Rate</span> <span className="text-right font-medium">{loan.interest_rate}% p.a.</span>
-                  <span>Processing Fee</span> <span className="font-mono text-right font-medium">₹0</span>
-                  <span className="font-bold mt-2">Net Disbursed</span> <span className="font-mono font-bold text-success text-right mt-2">₹{loan.approved_amount?.toLocaleString('en-IN')}</span>
+            {['CLOSED','PRE_CLOSED'].includes(activeLoan.status) && (
+              <div style={{ 
+                marginTop: 20, padding: '24px', background: 'linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%)',
+                borderRadius: 12, border: '1px solid #BBF7D0', display: 'flex', alignItems: 'center', gap: 20
+              }}>
+                <div style={{ fontSize: 48 }}>🎉</div>
+                <div>
+                  <h3 style={{ fontSize: 18, fontWeight: 700, color: '#166534', marginBottom: 4 }}>
+                    Congratulations on clearing your loan!
+                  </h3>
+                  <p style={{ fontSize: 14, color: '#15803D', lineHeight: 1.5 }}>
+                    Your {STATUS_LABELS[activeLoan.status].toLowerCase()} is now fully settled. 
+                    Thank you for choosing NexLoan. We'd love to partner with you again for your future financial needs!
+                  </p>
+                  <button 
+                    onClick={() => window.location.href = '/apply'}
+                    style={{ 
+                      marginTop: 12, padding: '8px 16px', background: '#166534', color: '#fff', 
+                      border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' 
+                    }}>
+                    Apply for a New Loan →
+                  </button>
                 </div>
               </div>
-
-              <div className="kfs-box">
-                <h3 className="kfs-title">2. Penalties & Recovery</h3>
-                <ul className="kfs-list">
-                  <li>Late Payment: 2% of overdue EMI amount per month.</li>
-                  <li>Pre-closure Charge: 2% on outstanding principal.</li>
-                </ul>
-              </div>
-
-              <div className="kfs-box">
-                <h3 className="kfs-title">3. Cooling-off Period</h3>
-                <p className="text-sm text-secondary">Cancel within 3 days without penalty.</p>
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <Button variant="ghost" onClick={() => setShowKFS(false)}>Cancel</Button>
-              <Button variant="primary" loading={processing} onClick={() => { setShowKFS(false); handleDisburse(); }}>I Accept KFS</Button>
-            </div>
+            )}
           </div>
+
+          {/* EMI Schedule */}
+          {emis.length > 0 && (
+            <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 8, padding: '20px 24px', marginBottom: 28 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#9CA3AF' }}>
+                  EMI Schedule
+                </p>
+                <div style={{ display: 'flex', gap: '16px' }}>
+                  <button onClick={async () => {
+                    if (!confirm("Are you sure you want to request a pre-closure for this loan? We will generate a secure link.")) return;
+                    try {
+                      const token = localStorage.getItem('nexloan_token');
+                      const base = '';
+                      const res = await fetch(`${base}/api/closure/${activeLoan.id}/request-preclosure`, {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${token}` }
+                      });
+                      const data = await res.json();
+                      if (res.ok && data.token) {
+                        alert("Pre-closure request generated! Redirecting you to the secure link (Dev Mode)...");
+                        window.location.href = `/preclosure/confirm?token=${data.token}`;
+                      } else {
+                        alert(`Failed: ${data.detail || 'Could not generate token'}`);
+                      }
+                    } catch (e: any) {
+                      alert(`Network error: ${e.message || String(e)}`);
+                      console.error(e);
+                    }
+                  }}
+                    style={{ fontSize: 13, color: '#DC2626', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
+                    Request Pre-closure 🔒
+                  </button>
+                  <button onClick={() => {
+                    const token = localStorage.getItem('nexloan_token');
+                    window.open(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/statements/${activeLoan.id}/emi-statement?token=${token}`, '_blank');
+                  }}
+                    style={{ fontSize: 13, color: primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
+                    Download Statement →
+                  </button>
+                </div>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #F3F4F6' }}>
+                      {['#', 'Due Date', 'EMI', 'Principal', 'Interest', 'Balance', 'Status', 'Action'].map(h => (
+                        <th key={h} style={{ padding: '8px 12px', textAlign: 'left',
+                          fontSize: 11, fontWeight: 600, textTransform: 'uppercase',
+                          letterSpacing: '0.05em', color: '#9CA3AF', whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {emis.map(e => {
+                      const statusColor = e.status === 'PAID' ? '#059669'
+                        : e.status === 'OVERDUE' ? '#DC2626' : '#D97706';
+                      const statusBg = e.status === 'PAID' ? '#F0FDF4'
+                        : e.status === 'OVERDUE' ? '#FEF2F2' : '#FFFBEB';
+                      return (
+                        <tr key={e.installment_no} style={{ borderBottom: '1px solid #F9FAFB' }}>
+                          <td style={{ padding: '10px 12px', color: '#9CA3AF', fontFamily: 'monospace' }}>{e.installment_no}</td>
+                          <td style={{ padding: '10px 12px', color: '#374151' }}>
+                            {new Date(e.due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </td>
+                          <td style={{ padding: '10px 12px', fontWeight: 600, color: '#111827' }}>{fmtINR(e.emi_amount)}</td>
+                          <td style={{ padding: '10px 12px', color: '#374151' }}>{fmtINR(e.principal)}</td>
+                          <td style={{ padding: '10px 12px', color: '#374151' }}>{fmtINR(e.interest)}</td>
+                          <td style={{ padding: '10px 12px', color: '#374151' }}>{fmtINR(e.outstanding_balance)}</td>
+                          <td style={{ padding: '10px 12px' }}>
+                            <span style={{ padding: '2px 8px', borderRadius: 4,
+                              background: statusBg, color: statusColor,
+                              fontSize: 11, fontWeight: 600, textTransform: 'uppercase' }}>
+                              {e.status}
+                            </span>
+                          </td>
+                          <td style={{ padding: '10px 12px' }}>
+                            {e.status === 'PENDING' && (
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    const token = localStorage.getItem('nexloan_token');
+                                    const base = process.env.NEXT_PUBLIC_API_URL || '';
+                                    // 1. Create order
+                                    const res = await fetch(`${base}/api/payments/${activeLoan.id}/create-order/${e.installment_no}`, {
+                                      method: 'POST',
+                                      headers: { Authorization: `Bearer ${token}` }
+                                    });
+                                    const data = await res.json();
+                                    if (!res.ok) throw new Error(data.detail);
+                                    
+                                    // 2. Verify / Complete payment (Simulated)
+                                    const verifyRes = await fetch(`${base}/api/payments/verify`, {
+                                      method: 'POST',
+                                      headers: { 
+                                        'Content-Type': 'application/json',
+                                        Authorization: `Bearer ${token}` 
+                                      },
+                                      body: JSON.stringify({
+                                        order_id: data.order_id,
+                                        payment_id: "pay_simulated_" + Date.now(),
+                                        signature: "simulated_sig"
+                                      })
+                                    });
+                                    if (!verifyRes.ok) throw new Error("Verification failed");
+                                    
+                                    alert("Payment successful! Loan status has been updated.");
+                                    window.location.reload();
+                                  } catch(err: any) {
+                                    alert(`Payment error: ${err.message}`);
+                                  }
+                                }}
+                                style={{
+                                  background: primary, color: '#fff', border: 'none',
+                                  padding: '4px 12px', borderRadius: 4, fontSize: 11,
+                                  fontWeight: 600, cursor: 'pointer'
+                                }}
+                              >
+                                Pay
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Empty state ────────────────────── */}
+      {!isOps && loans.length === 0 && !busy && (
+        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 8,
+          padding: '60px 24px', textAlign: 'center' }}>
+          <p style={{ fontSize: 32, marginBottom: 16 }}>🏦</p>
+          <p style={{ fontSize: 18, fontWeight: 600, color: '#111827', marginBottom: 8 }}>No loans yet</p>
+          <p style={{ fontSize: 14, color: '#6B7280', marginBottom: 24 }}>Apply for your first loan in minutes.</p>
+          <button onClick={() => router.push('/apply')} style={{
+            padding: '10px 24px', background: primary, color: '#fff',
+            border: 'none', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+          }}>Apply Now →</button>
         </div>
       )}
 
-      <style jsx>{`
-        .text-secondary { color: var(--text-secondary); }
-        .text-tertiary { color: var(--text-tertiary); }
-        .text-success { color: var(--color-success); }
-        .text-warning { color: var(--color-warning); }
-        .bg-surface-sunken { background: var(--surface-sunken); }
+      {busy && (
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          {[1,2,3].map(i => (
+            <div key={i} style={{ height: 90, flex: '1 1 180px', borderRadius: 8,
+              background: 'linear-gradient(90deg,#F3F4F6 25%,#E5E7EB 50%,#F3F4F6 75%)',
+              backgroundSize: '400px 100%', animation: 'shimmer 1.4s infinite' }} />
+          ))}
+        </div>
+      )}
 
-        .section-heading {
-          font-size: var(--text-xs);
-          font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-          color: var(--text-tertiary);
-          margin-bottom: var(--space-4);
-        }
-
-        .dashboard-container {
-          max-width: 1000px;
-          margin: 0 auto;
-        }
-
-        .dashboard-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          margin-bottom: var(--space-8);
-        }
-        .dashboard-header__title {
-          font-family: var(--font-display);
-          font-size: var(--text-3xl);
-          font-weight: 700;
-          line-height: 1.2;
-        }
-        .dashboard-header__download {
-          display: inline-flex;
-          align-items: center;
-          gap: var(--space-1);
-          font-size: var(--text-xs);
-          font-weight: 600;
-          color: var(--text-accent);
-          background: none;
-          border: none;
-          cursor: pointer;
-          margin-top: var(--space-2);
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
-        }
-        .dashboard-header__download:hover {
-          text-decoration: underline;
-        }
-
-        .dashboard-grid {
-          display: grid;
-          grid-template-columns: 3fr 2fr;
-          gap: var(--space-6);
-        }
-
-        .dashboard-col {
-          display: flex;
-          flex-direction: column;
-          gap: var(--space-6);
-        }
-
-        .dashboard-metrics-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: var(--space-4);
-        }
-        .metric-box {
-          background: var(--surface-base);
-          padding: var(--space-4);
-          border-radius: var(--radius-md);
-          display: flex;
-          flex-direction: column;
-        }
-        .metric-value {
-          margin-top: var(--space-1);
-          font-size: var(--text-xl);
-          color: var(--text-primary);
-        }
-        .metric-value--success { color: var(--color-success); }
-        .metric-value--accent { color: var(--text-accent); font-family: var(--font-display); font-weight: 700; }
-
-        .action-panel {
-          padding: var(--space-4);
-          border-radius: var(--radius-lg);
-          border: 1px solid var(--surface-border);
-          background: var(--surface-base);
-        }
-        .action-panel--warning { border-left: 3px solid var(--color-warning); }
-        .action-panel--success { border-left: 3px solid var(--color-success); }
-        .action-panel--error { border-left: 3px solid var(--color-error); }
-        .action-panel--info { border-left: 3px solid var(--text-accent); }
-        
-        .action-panel__title {
-          font-size: var(--text-sm);
-          font-weight: 600;
-          color: var(--text-primary);
-        }
-        .action-panel__desc {
-          font-size: var(--text-xs);
-          color: var(--text-secondary);
-          margin-top: 2px;
-          margin-bottom: var(--space-4);
-        }
-
-        .quote-box {
-          background: var(--surface-sunken);
-          border-radius: var(--radius-md);
-          padding: var(--space-4);
-        }
-        .quote-row {
-          display: flex;
-          justify-content: space-between;
-          font-size: var(--text-sm);
-          color: var(--text-secondary);
-          padding: 2px 0;
-        }
-        .quote-row--total {
-          color: var(--text-primary);
-          border-top: 1px dotted var(--surface-border);
-        }
-
-        /* ── Modal ───────────────────────── */
-        .modal-overlay {
-          position: fixed;
-          inset: 0;
-          background: rgba(0,0,0,0.6);
-          backdrop-filter: blur(4px);
-          z-index: 1000;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: var(--space-4);
-        }
-        .modal-content {
-          background: var(--surface-raised);
-          width: 100%;
-          max-width: 600px;
-          border-radius: var(--radius-xl);
-          border: 1px solid var(--surface-border);
-          box-shadow: var(--shadow-lg);
-          max-height: 90vh;
-          display: flex;
-          flex-direction: column;
-        }
-        .modal-header {
-          padding: var(--space-5) var(--space-6);
-          border-bottom: 1px solid var(--surface-border);
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-        }
-        .modal-close {
-          background: none;
-          border: none;
-          color: var(--text-tertiary);
-          font-size: 24px;
-          cursor: pointer;
-          line-height: 1;
-        }
-        .modal-body {
-          padding: var(--space-6);
-          overflow-y: auto;
-        }
-        .kfs-box {
-          background: var(--surface-base);
-          border: 1px solid var(--surface-border);
-          border-radius: var(--radius-md);
-          padding: var(--space-4);
-        }
-        .kfs-title {
-          font-size: var(--text-sm);
-          font-weight: 600;
-          margin-bottom: var(--space-3);
-          color: var(--text-primary);
-          border-bottom: 1px solid var(--surface-border);
-          padding-bottom: var(--space-2);
-        }
-        .kfs-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: var(--space-2);
-          font-size: var(--text-sm);
-          color: var(--text-secondary);
-        }
-        .kfs-list {
-          list-style: disc;
-          padding-left: var(--space-5);
-          font-size: var(--text-sm);
-          color: var(--text-secondary);
-          line-height: 1.6;
-        }
-        .modal-footer {
-          padding: var(--space-4) var(--space-6);
-          border-top: 1px solid var(--surface-border);
-          background: var(--surface-base);
-          display: flex;
-          justify-content: flex-end;
-          gap: var(--space-3);
-          border-radius: 0 0 var(--radius-xl) var(--radius-xl);
-        }
-
-        @media (max-width: 768px) {
-          .dashboard-grid { grid-template-columns: 1fr; }
+      <style>{`
+        @keyframes shimmer {
+          0% { background-position: -400px 0; }
+          100% { background-position: 400px 0; }
         }
       `}</style>
     </div>

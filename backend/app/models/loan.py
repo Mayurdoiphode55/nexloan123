@@ -68,6 +68,8 @@ class UserRole(str, PyEnum):
     """User roles for access control (RBAC)."""
     BORROWER = "BORROWER"
     LOAN_OFFICER = "LOAN_OFFICER"
+    VERIFIER = "VERIFIER"
+    UNDERWRITER = "UNDERWRITER"
     ADMIN = "ADMIN"
     SUPER_ADMIN = "SUPER_ADMIN"
 
@@ -88,8 +90,15 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
+    # Phase 2 — Employee department tracking
+    department = Column(String(100), nullable=True)       # e.g., Retail Lending, Collections
+    branch_location = Column(String(255), nullable=True)  # e.g., Mumbai HQ, Delhi Branch
+    employee_id = Column(String(50), nullable=True)       # Internal employee ID
+    reporting_manager_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
     # Relationships
     loans = relationship("Loan", back_populates="user", lazy="noload")
+    reporting_manager = relationship("User", remote_side=[id], foreign_keys=[reporting_manager_id])
 
 
 class Loan(Base):
@@ -113,6 +122,13 @@ class Loan(Base):
     existing_emi = Column(Float, default=0.0)
     date_of_birth = Column(DateTime, nullable=True)
     gender = Column(String(20), nullable=True)
+
+    # Phase 2 — Collateral loan fields
+    loan_type = Column(String(20), default="NON_COLLATERAL", nullable=False)  # COLLATERAL | NON_COLLATERAL
+    collateral_type = Column(String(50), nullable=True)       # GOLD, PROPERTY, VEHICLE, FIXED_DEPOSIT
+    collateral_value = Column(Float, nullable=True)
+    collateral_description = Column(Text, nullable=True)
+    lien_document_url = Column(String(500), nullable=True)
 
     # Underwriting results
     credit_score = Column(Integer, nullable=True)
@@ -526,3 +542,197 @@ class CallbackRequest(Base):
     notes = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+# ─── Phase 2 Enterprise Models ──────────────────────────────────────────────
+
+
+class PreClosureRequest(Base):
+    """Pre-closure request with tokenized 24-hour link for settlement."""
+    __tablename__ = "pre_closure_requests"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    loan_id = Column(UUID(as_uuid=True), ForeignKey("loans.id"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    token = Column(String(128), unique=True, nullable=False)         # secure random token
+    token_expires_at = Column(DateTime, nullable=False)               # NOW() + 24 hours
+    outstanding_principal = Column(Float, nullable=False)
+    pre_closure_charge_percent = Column(Float, nullable=False, default=2.0)
+    pre_closure_charge = Column(Float, nullable=False)
+    total_settlement_amount = Column(Float, nullable=False)
+    terms_accepted = Column(Boolean, default=False)
+    terms_accepted_at = Column(DateTime, nullable=True)
+    status = Column(String(20), default="PENDING", nullable=False)    # PENDING | ACCEPTED | EXPIRED | COMPLETED
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    loan = relationship("Loan")
+    user = relationship("User")
+
+
+class AdminDelegation(Base):
+    """Admin delegation — temporary permission transfer between admins."""
+    __tablename__ = "admin_delegations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    delegator_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)   # Admin A
+    delegate_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)    # Admin B
+    delegated_permissions = Column(JSON, nullable=True)       # list of permissions granted
+    start_date = Column(DateTime, nullable=False)
+    end_date = Column(DateTime, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    delegator = relationship("User", foreign_keys=[delegator_id])
+    delegate = relationship("User", foreign_keys=[delegate_id])
+
+
+class LoanEnquiry(Base):
+    """Public or authenticated loan service enquiry before formal application."""
+    __tablename__ = "loan_enquiries"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    full_name = Column(String(255), nullable=False)
+    mobile = Column(String(15), nullable=False)
+    email = Column(String(255), nullable=True)
+    loan_type = Column(String(50), nullable=True)              # PERSONAL, COLLATERAL, etc.
+    approx_amount = Column(Float, nullable=True)
+    message = Column(Text, nullable=True)
+    status = Column(String(20), default="NEW", nullable=False)  # NEW | CLAIMED | RESPONDED | CONVERTED
+    claimed_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    converted_loan_id = Column(UUID(as_uuid=True), ForeignKey("loans.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    officer = relationship("User", foreign_keys=[claimed_by])
+
+
+class Announcement(Base):
+    """Tenant announcements displayed on the borrower dashboard."""
+    __tablename__ = "announcements"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = Column(String(255), nullable=False)
+    body = Column(Text, nullable=False)
+    image_url = Column(String(500), nullable=True)
+    expiry_date = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    author = relationship("User", foreign_keys=[created_by])
+
+
+# ─── Phase 4 (prompt4.md) Models ────────────────────────────────────────────
+
+
+class TenantConfig(Base):
+    """White-label tenant configuration — one row per deployment."""
+    __tablename__ = "tenant_config"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Identity
+    tenant_id = Column(String(50), unique=True, nullable=False)
+    client_name = Column(String(200), nullable=False)
+    # Branding
+    logo_url = Column(String(500))
+    favicon_url = Column(String(500))
+    primary_color = Column(String(7), default="#1A1A2E")
+    secondary_color = Column(String(7), default="#F5F5F5")
+    font_family = Column(String(100), default="Inter")
+    tagline = Column(String(300))
+    # Contact & Legal
+    support_email = Column(String(200))
+    support_phone = Column(String(20))
+    website_url = Column(String(300))
+    terms_url = Column(String(300))
+    privacy_url = Column(String(300))
+    registered_name = Column(String(300))
+    rbi_registration = Column(String(100))
+    # Email Branding
+    email_from_name = Column(String(200))
+    email_from_address = Column(String(200))
+    email_header_color = Column(String(7), default="#1A1A2E")
+    email_logo_url = Column(String(500))
+    # Feature Flags
+    feature_preclosure = Column(Boolean, default=True)
+    feature_emi_pause = Column(Boolean, default=True)
+    feature_loan_comparison = Column(Boolean, default=True)
+    feature_collateral_loans = Column(Boolean, default=False)
+    feature_multi_language = Column(Boolean, default=False)
+    feature_support_chat = Column(Boolean, default=True)
+    # Financial Config
+    default_preclosure_rate = Column(Float, default=2.0)
+    preclosure_free_months = Column(Integer, default=6)
+    preclosure_early_charge_rate = Column(Float, default=10.0)
+    preclosure_link_validity_hours = Column(Integer, default=24)
+    max_loan_amount = Column(Float, default=2500000)
+    min_loan_amount = Column(Float, default=50000)
+    max_tenure_months = Column(Integer, default=60)
+    min_tenure_months = Column(Integer, default=12)
+    # Announcement / Media
+    announcement_text = Column(Text)
+    announcement_active = Column(Boolean, default=False)
+    announcement_color = Column(String(7), default="#F59E0B")
+    # Collateral Policy (JSON)
+    collateral_policy = Column(JSON, default={})
+    # Department Config (JSON)
+    departments = Column(JSON, default=[])
+    # Verification Parameters (JSON)
+    verification_parameters = Column(JSON, default={
+        "require_pan": True,
+        "require_aadhaar": True,
+        "require_salary_slip": False,
+        "require_bank_statement": False,
+        "require_itr": False,
+        "require_form_16": False,
+        "min_ai_confidence": 0.6,
+        "allow_manual_override": True,
+        "override_requires_reason": True,
+    })
+    # Auto statements
+    auto_monthly_statement = Column(Boolean, default=False)
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class EmployeeHistory(Base):
+    """Tracks department/role changes for employee users."""
+    __tablename__ = "employee_history"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    change_type = Column(String(50), nullable=False)  # DEPARTMENT_CHANGE, ROLE_CHANGE, DEACTIVATED, REACTIVATED
+    old_value = Column(String(200))
+    new_value = Column(String(200))
+    changed_by = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    reason = Column(String(500))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", foreign_keys=[user_id])
+    changed_by_user = relationship("User", foreign_keys=[changed_by])
+
+
+class ServiceEnquiry(Base):
+    """Public loan service enquiry — no login required."""
+    __tablename__ = "service_enquiries"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    name = Column(String(200), nullable=False)
+    email = Column(String(200), nullable=False)
+    mobile = Column(String(15), nullable=False)
+    loan_type_interest = Column(String(100))
+    loan_amount_range = Column(String(50))
+    message = Column(Text)
+    status = Column(String(20), default="NEW")  # NEW, CONTACTED, CONVERTED, CLOSED
+    assigned_to = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    officer = relationship("User", foreign_keys=[assigned_to])

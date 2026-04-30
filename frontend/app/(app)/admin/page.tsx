@@ -504,14 +504,14 @@ export default function AdminPage() {
               const statusColor = t.status === 'OPEN' ? 'warning'
                 : t.status === 'IN_PROGRESS' ? 'info'
                 : t.status === 'RESOLVED' ? 'success'
-                : 'default';
+                : 'neutral';
               return (
                 <Card key={t.id} padding="md">
                   <div className="callback-item__row">
                     <div className="callback-item__info">
                       <div className="callback-item__name">{t.subject}</div>
                       <div className="callback-item__meta">
-                        <Badge variant={statusColor as any}>{t.status.replace('_', ' ')}</Badge>
+                        <Badge variant={statusColor as 'success' | 'warning' | 'info' | 'neutral'}>{t.status.replace('_', ' ')}</Badge>
                         <Badge variant="neutral">{t.priority}</Badge>
                         <span className="text-tertiary text-xs">
                           {new Date(t.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -541,7 +541,7 @@ export default function AdminPage() {
                         <Badge variant="success">✓ Resolved</Badge>
                       )}
                       {t.status === 'CLOSED' && (
-                        <Badge variant="default">Closed</Badge>
+                        <Badge variant="neutral">Closed</Badge>
                       )}
                     </div>
                   </div>

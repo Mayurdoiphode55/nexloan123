@@ -76,7 +76,7 @@ export default function ComparePage() {
             background: 'rgba(255,255,255,0.08)',
             border: '1px solid rgba(255,255,255,0.15)',
             borderRadius: '6px',
-            color: '#e5e5e5',
+            color: '#121111ff',
             padding: '8px 12px',
             fontSize: '14px',
             width: '140px',

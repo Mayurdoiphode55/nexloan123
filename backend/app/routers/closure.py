@@ -254,3 +254,234 @@ async def get_closure_stats(
         "reapply_offer_rate": reapply_rate,
     }
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase 2: Pre-Closure Token Flow
+# ═══════════════════════════════════════════════════════════════════════════════
+
+import secrets
+from datetime import timedelta
+from app.models.loan import PreClosureRequest
+
+
+@router.post(
+    "/{loan_id}/request-preclosure",
+    summary="Generate a tokenized 24-hour pre-closure link",
+)
+async def request_preclosure(
+    loan_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Creates a pre-closure request with a secure 24-hour token."""
+    stmt = select(Loan).where(Loan.id == loan_id, Loan.user_id == current_user.id)
+    result = await db.execute(stmt)
+    loan = result.scalars().first()
+
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
+    if loan.status != LoanStatus.ACTIVE:
+        raise HTTPException(status_code=400, detail="Only ACTIVE loans can be pre-closed")
+
+    # Check for existing pending request
+    existing = await db.execute(
+        select(PreClosureRequest).where(
+            PreClosureRequest.loan_id == loan_id,
+            PreClosureRequest.status == "PENDING",
+            PreClosureRequest.token_expires_at > datetime.utcnow(),
+        )
+    )
+    existing_pcr = existing.scalars().first()
+    if existing_pcr:
+        logger.info(f"Returning existing pre-closure token for loan {loan.loan_number}")
+        return {
+            "message": "Existing pending request found. Redirecting to secure link.",
+            "token": existing_pcr.token,
+            "expires_at": existing_pcr.token_expires_at.isoformat(),
+            "total_settlement_amount": existing_pcr.total_settlement_amount,
+        }
+
+    # Calculate settlement
+    sched_stmt = select(EMISchedule).where(
+        EMISchedule.loan_id == loan_id,
+        EMISchedule.status == PaymentStatus.PENDING,
+    ).order_by(asc(EMISchedule.installment_no))
+    sched_result = await db.execute(sched_stmt)
+    pending = sched_result.scalars().all()
+
+    quote = calculate_preclosure(pending)
+    token = secrets.token_urlsafe(64)
+    token_expires_at = datetime.utcnow() + timedelta(hours=24)
+
+    from sqlalchemy import text
+    insert_stmt = text("""
+        INSERT INTO pre_closure_requests 
+        (id, loan_id, user_id, token, token_expires_at, outstanding_principal, 
+         pre_closure_charge_percent, pre_closure_charge, total_settlement_amount, 
+         terms_accepted, status, created_at)
+        VALUES 
+        (gen_random_uuid(), :loan_id, :user_id, :token, :token_expires_at, 
+         :outstanding_principal, 2.0, :pre_closure_charge, :total_settlement_amount, 
+         false, 'PENDING', now())
+    """)
+    await db.execute(insert_stmt, {
+        "loan_id": loan.id,
+        "user_id": current_user.id,
+        "token": token,
+        "token_expires_at": token_expires_at,
+        "outstanding_principal": quote["outstanding_principal"],
+        "pre_closure_charge": quote["preclosure_charge"],
+        "total_settlement_amount": quote["total_payable"]
+    })
+    await db.commit()
+
+    logger.info(f"Pre-closure token generated for loan {loan.loan_number}")
+
+    return {
+        "message": "Pre-closure request created. Token valid for 24 hours.",
+        "token": token,
+        "expires_at": token_expires_at.isoformat(),
+        "total_settlement_amount": quote["total_payable"],
+    }
+
+
+@router.get(
+    "/preclosure/{token}",
+    summary="Validate a pre-closure token and return settlement details",
+)
+async def get_preclosure_by_token(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Public endpoint — validates token and returns settlement breakdown."""
+    result = await db.execute(
+        select(PreClosureRequest).where(PreClosureRequest.token == token)
+    )
+    pcr = result.scalars().first()
+
+    if not pcr:
+        raise HTTPException(status_code=404, detail="Invalid or expired pre-closure token")
+
+    if pcr.token_expires_at < datetime.utcnow():
+        pcr.status = "EXPIRED"
+        await db.commit()
+        raise HTTPException(status_code=410, detail="Pre-closure token has expired")
+
+    if pcr.status == "COMPLETED":
+        raise HTTPException(status_code=400, detail="Pre-closure already completed")
+
+    # Fetch loan info
+    loan = (await db.execute(select(Loan).where(Loan.id == pcr.loan_id))).scalars().first()
+
+    return {
+        "token": pcr.token,
+        "loan_number": loan.loan_number if loan else "N/A",
+        "outstanding_principal": pcr.outstanding_principal,
+        "preclosure_charge": pcr.pre_closure_charge,
+        "total_payable": pcr.total_settlement_amount,
+        "charge_rate": pcr.pre_closure_charge_percent,
+        "valid_until": pcr.token_expires_at.isoformat(),
+        "terms_accepted": pcr.terms_accepted,
+        "status": pcr.status,
+    }
+
+
+@router.post(
+    "/preclosure/{token}/confirm",
+    summary="Accept pre-closure T&C",
+)
+async def confirm_preclosure(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Borrower accepts terms and conditions for pre-closure."""
+    result = await db.execute(
+        select(PreClosureRequest).where(PreClosureRequest.token == token)
+    )
+    pcr = result.scalars().first()
+
+    if not pcr:
+        raise HTTPException(status_code=404, detail="Invalid token")
+    if pcr.token_expires_at < datetime.utcnow():
+        pcr.status = "EXPIRED"
+        await db.commit()
+        raise HTTPException(status_code=410, detail="Token expired")
+    if pcr.status != "PENDING":
+        raise HTTPException(status_code=400, detail=f"Cannot confirm — status is {pcr.status}")
+
+    pcr.terms_accepted = True
+    pcr.terms_accepted_at = datetime.utcnow()
+    pcr.status = "ACCEPTED"
+    await db.commit()
+
+    return {"message": "Terms accepted. Proceed to payment.", "status": "ACCEPTED"}
+
+
+@router.post(
+    "/preclosure/{token}/complete",
+    summary="Complete pre-closure payment and close loan",
+)
+async def complete_preclosure(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Finalizes the pre-closure: marks all pending EMIs paid, closes loan."""
+    from app.models.loan import AuditLog
+
+    result = await db.execute(
+        select(PreClosureRequest).where(PreClosureRequest.token == token)
+    )
+    pcr = result.scalars().first()
+
+    if not pcr:
+        raise HTTPException(status_code=404, detail="Invalid token")
+    if pcr.status != "ACCEPTED":
+        raise HTTPException(status_code=400, detail="Terms must be accepted first")
+
+    # Fetch and close loan
+    loan = (await db.execute(select(Loan).where(Loan.id == pcr.loan_id))).scalars().first()
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
+
+    # Mark all pending EMIs as paid
+    pending_stmt = select(EMISchedule).where(
+        EMISchedule.loan_id == loan.id,
+        EMISchedule.status == PaymentStatus.PENDING,
+    )
+    pending_result = await db.execute(pending_stmt)
+    for inst in pending_result.scalars().all():
+        inst.status = PaymentStatus.PAID
+        inst.paid_at = datetime.utcnow()
+        inst.paid_amount = inst.emi_amount
+
+    loan.status = LoanStatus.PRE_CLOSED
+    loan.closed_at = datetime.utcnow()
+    loan.total_paid = (loan.total_paid or 0) + pcr.total_settlement_amount
+
+    pcr.status = "COMPLETED"
+
+    # Audit
+    audit = AuditLog(
+        loan_id=loan.id,
+        action="PRE_CLOSURE_COMPLETED",
+        from_status=LoanStatus.ACTIVE.value,
+        to_status=LoanStatus.PRE_CLOSED.value,
+        actor=str(pcr.user_id),
+        metadata_={
+            "token": token[:8] + "...",
+            "settlement_amount": pcr.total_settlement_amount,
+        },
+    )
+    db.add(audit)
+    await db.commit()
+
+    logger.info(f"🔒 Pre-closure completed for loan {loan.loan_number} via token")
+
+    return {
+        "message": "Loan pre-closed successfully",
+        "loan_number": loan.loan_number,
+        "status": "PRE_CLOSED",
+        "settlement_amount": pcr.total_settlement_amount,
+    }
+
+
