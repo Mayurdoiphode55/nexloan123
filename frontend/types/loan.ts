@@ -227,6 +227,9 @@ export interface UserListItem {
   is_active: boolean
   is_verified: boolean
   created_at: string
+  department?: string | null
+  branch_location?: string | null
+  employee_id?: string | null
 }
 
 // ─── Support Tickets ────────────────────────────────────────────────────────

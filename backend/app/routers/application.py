@@ -35,6 +35,10 @@ class InquiryRequest(BaseModel):
     existing_emi: float = 0.0
     date_of_birth: datetime
     gender: Optional[str] = None
+    # Collateral fields (optional)
+    collateral_type: Optional[str] = None      # GOLD, PROPERTY, VEHICLE, FIXED_DEPOSIT
+    collateral_value: Optional[float] = None
+    collateral_description: Optional[str] = None
 
 
 class InquiryResponse(BaseModel):
@@ -88,6 +92,11 @@ async def create_inquiry(
     loans_this_year = len(result.scalars().all())
     loan_number = f"NL-{year}-{(loans_this_year + 1):05d}"
 
+    # Determine if collateral is required
+    loan_type = "NON_COLLATERAL"
+    if req.collateral_type:
+        loan_type = "COLLATERAL"
+
     # Create Loan
     new_loan = Loan(
         user_id=current_user.id,
@@ -101,6 +110,10 @@ async def create_inquiry(
         existing_emi=req.existing_emi,
         date_of_birth=req.date_of_birth.replace(tzinfo=None),
         gender=req.gender,
+        loan_type=loan_type,
+        collateral_type=req.collateral_type,
+        collateral_value=req.collateral_value,
+        collateral_description=req.collateral_description,
     )
     
     db.add(new_loan)

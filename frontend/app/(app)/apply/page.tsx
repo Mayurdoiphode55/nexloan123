@@ -90,6 +90,10 @@ export default function ApplyPage() {
         throw new Error("Gender is required");
       }
       
+      if (requiresCollateral && (!formData.collateral_type || !formData.collateral_value || !formData.collateral_description)) {
+        throw new Error("Collateral details are required for this loan amount.");
+      }
+
       const dobDate = `${formData.dob_year}-${String(formData.dob_month).padStart(2, '0')}-${String(formData.dob_day).padStart(2, '0')}`;
       
       const inquiryPayload = {
@@ -101,6 +105,11 @@ export default function ApplyPage() {
         existing_emi: formData.existing_emi,
         date_of_birth: dobDate + "T00:00:00Z",
         gender: formData.gender,
+        ...(requiresCollateral ? {
+          collateral_type: formData.collateral_type,
+          collateral_value: formData.collateral_value,
+          collateral_description: formData.collateral_description
+        } : {})
       };
       const response = await loanAPI.createInquiry(inquiryPayload);
       const loan = response.data;
@@ -164,6 +173,10 @@ export default function ApplyPage() {
       </div>
     );
   }
+
+  const collateralThreshold: number = tenant?.collateral_policy?.threshold_amount ?? Infinity;
+  const requiresCollateral: boolean =
+    !!(tenant?.feature_collateral_loans) && isFinite(collateralThreshold) && formData.loan_amount > collateralThreshold;
 
   return (
     <div className="apply-page">
@@ -393,42 +406,41 @@ export default function ApplyPage() {
                 </select>
               </div>
 
-              {/* Collateral Loan Toggle */}
-              {tenant?.feature_collateral_loans && (
-                <div className="co-toggle">
-                  <div className="co-toggle__header" onClick={() => setFormData(p => ({ ...p, loan_type: p.loan_type === 'COLLATERAL' ? 'NON_COLLATERAL' : 'COLLATERAL' }))}>
+              {/* Collateral Loan Requirement */}
+              {requiresCollateral && (
+                <div style={{ background: '#FFFBEB', border: '1px solid #F59E0B', borderRadius: 8, padding: 20 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                    <span style={{ fontSize: 24 }}>🛡️</span>
                     <div>
-                      <span className="co-toggle__title">Collateral Loan</span>
-                      <span className="co-toggle__hint">Pledge an asset for lower interest rates</span>
-                    </div>
-                    <div className={`co-toggle__switch ${formData.loan_type === 'COLLATERAL' ? 'co-toggle__switch--on' : ''}`}>
-                      <span className="co-toggle__knob" />
+                      <h4 style={{ fontSize: 14, fontWeight: 700, color: '#92400E' }}>Collateral Required</h4>
+                      <p style={{ fontSize: 12, color: '#B45309' }}>
+                        Loans above ₹{(collateralThreshold).toLocaleString('en-IN')} require an asset pledge.
+                      </p>
                     </div>
                   </div>
-                  {formData.loan_type === 'COLLATERAL' && (
-                    <div className="co-form animate-card-entrance">
-                      <div className="apply-grid-2">
-                        <div className="apply-field">
-                          <label className="apply-field__label">ASSET TYPE</label>
-                          <select name="collateral_type" value={formData.collateral_type} onChange={handleInputChange} className="apply-field__select" required>
-                            <option value="" disabled>Select asset type</option>
-                            <option value="GOLD">Gold</option>
-                            <option value="PROPERTY">Property</option>
-                            <option value="VEHICLE">Vehicle</option>
-                            <option value="FIXED_DEPOSIT">Fixed Deposit</option>
-                          </select>
-                        </div>
-                        <div className="apply-field">
-                          <label className="apply-field__label">ASSET VALUE (₹)</label>
-                          <input type="number" name="collateral_value" min={0} value={formData.collateral_value} onChange={handleInputChange} className="apply-field__date" required placeholder="Estimated value" />
-                        </div>
+                  
+                  <div className="co-form animate-card-entrance" style={{ marginTop: 0 }}>
+                    <div className="apply-grid-2">
+                      <div className="apply-field">
+                        <label className="apply-field__label">ASSET TYPE *</label>
+                        <select name="collateral_type" value={formData.collateral_type} onChange={handleInputChange} className="apply-field__select" required>
+                          <option value="" disabled>Select asset type</option>
+                          <option value="GOLD">Gold</option>
+                          <option value="PROPERTY">Property</option>
+                          <option value="VEHICLE">Vehicle</option>
+                          <option value="FIXED_DEPOSIT">Fixed Deposit</option>
+                        </select>
                       </div>
                       <div className="apply-field">
-                        <label className="apply-field__label">ASSET DESCRIPTION</label>
-                        <input type="text" name="collateral_description" value={formData.collateral_description} onChange={(e) => setFormData(p => ({ ...p, collateral_description: e.target.value }))} className="apply-field__date" placeholder="e.g. 24K gold jewellery, 50gm" />
+                        <label className="apply-field__label">ASSET VALUE (₹) *</label>
+                        <input type="number" name="collateral_value" min={0} value={formData.collateral_value} onChange={handleInputChange} className="apply-field__date" required placeholder="Estimated value" />
                       </div>
                     </div>
-                  )}
+                    <div className="apply-field">
+                      <label className="apply-field__label">ASSET DESCRIPTION *</label>
+                      <input type="text" name="collateral_description" required value={formData.collateral_description} onChange={(e) => setFormData(p => ({ ...p, collateral_description: e.target.value }))} className="apply-field__date" placeholder="e.g. 24K gold jewellery, 50gm" />
+                    </div>
+                  </div>
                 </div>
               )}
               {/* Co-Applicant Toggle */}

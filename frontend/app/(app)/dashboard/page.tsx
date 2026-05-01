@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTenant } from '@/lib/tenant';
+import StatementsPanel from '@/components/dashboard/StatementsPanel';
 
 interface PendingTask {
   type: string; icon: string; label: string;
@@ -409,6 +410,15 @@ export default function DashboardPage() {
                 </table>
               </div>
             </div>
+          )}
+
+          {/* ── Statements ──────────────────── */}
+          {activeLoan && ['ACTIVE','DISBURSED'].includes(activeLoan.status) && (
+            <StatementsPanel
+              loanId={activeLoan.id}
+              loanNumber={activeLoan.loan_number}
+              primary={primary}
+            />
           )}
         </>
       )}

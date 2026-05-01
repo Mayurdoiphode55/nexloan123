@@ -403,3 +403,44 @@ async def change_department(
         "message": "Department updated and logged",
     }
 
+
+@router.get(
+    "/{user_id}/history",
+    summary="Get employee change history",
+)
+async def get_employee_history(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission(Permission.USER_MANAGE)),
+):
+    """Returns department/role change history for an employee."""
+    from app.models.loan import EmployeeHistory
+
+    result = await db.execute(
+        select(EmployeeHistory)
+        .where(EmployeeHistory.user_id == user_id)
+        .order_by(EmployeeHistory.created_at.desc())
+    )
+    items = result.scalars().all()
+
+    history = []
+    for h in items:
+        changer = None
+        if h.changed_by:
+            changer_res = await db.execute(
+                select(User.full_name).where(User.id == h.changed_by)
+            )
+            changer = changer_res.scalar()
+
+        history.append({
+            "id": str(h.id),
+            "change_type": h.change_type,
+            "old_value": h.old_value,
+            "new_value": h.new_value,
+            "changed_by_name": changer or "System",
+            "reason": h.reason,
+            "created_at": h.created_at.isoformat() if h.created_at else None,
+        })
+
+    return history
+

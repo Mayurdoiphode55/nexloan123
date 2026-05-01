@@ -169,16 +169,29 @@ class TenantConfigUpdate(BaseModel):
 @router.get("/admin/tenant-config")
 async def get_admin_tenant_config(
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(None),  # Will be overridden by require_role in main.py
 ):
     """Returns full tenant config (admin only)."""
-    from app.utils.auth import get_current_user, require_role
+    from app.utils.auth import get_current_user
     result = await db.execute(
         select(TenantConfig).where(TenantConfig.tenant_id == settings.TENANT_ID)
     )
     tenant = result.scalar_one_or_none()
     if not tenant:
-        raise HTTPException(status_code=404, detail="Tenant config not found")
+        # Auto-seed if missing
+        tenant = TenantConfig(
+            tenant_id=settings.TENANT_ID,
+            client_name="NexLoan",
+            tagline="AI-Powered Lending, Simplified.",
+            primary_color="#4F46E5",
+            secondary_color="#F5F5F5",
+            support_email="support@nexloan.in",
+            support_phone="+91-98765-43210",
+            registered_name="Theoremlabs Pvt. Ltd.",
+            departments=["Credit", "Operations", "Customer Service", "Risk", "Collections"],
+        )
+        db.add(tenant)
+        await db.commit()
+        await db.refresh(tenant)
 
     return {
         "tenant_id": tenant.tenant_id,

@@ -6,6 +6,58 @@ import { useTenant } from '@/lib/tenant';
 
 type Tab = 'branding' | 'loan_products' | 'preclosure' | 'notifications' | 'team' | 'delegation';
 
+// ── Sub-components defined OUTSIDE the page to prevent focus loss on re-render ──
+
+function Field({ label, type = 'text', value, onChange, hint }: any) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>{label}</label>
+      {hint && <p style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 6 }}>{hint}</p>}
+      <input type={type} value={value ?? ''} onChange={e => onChange(e.target.value)}
+        style={{ width: '100%', padding: '10px 12px', border: '1px solid #E5E7EB', borderRadius: 6,
+          fontSize: 14, color: '#111827', outline: 'none', boxSizing: 'border-box' }} />
+    </div>
+  );
+}
+
+function Toggle({ label, value, onChange, hint, primary }: any) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '14px 0', borderBottom: '1px solid #F3F4F6' }}>
+      <div>
+        <p style={{ fontSize: 14, fontWeight: 500, color: '#111827' }}>{label}</p>
+        {hint && <p style={{ fontSize: 12, color: '#9CA3AF', marginTop: 2 }}>{hint}</p>}
+      </div>
+      <button onClick={() => onChange(!value)} style={{
+        width: 44, height: 24, borderRadius: 12, border: 'none',
+        background: value ? primary : '#D1D5DB', cursor: 'pointer',
+        position: 'relative', transition: 'background 0.2s',
+      }}>
+        <span style={{
+          position: 'absolute', top: 3,
+          left: value ? 22 : 3,
+          width: 18, height: 18, borderRadius: '50%', background: '#fff',
+          transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+        }} />
+      </button>
+    </div>
+  );
+}
+
+function SaveButton({ onClick, label = 'Save Changes', saving, saved, error, primary }: any) {
+  return (
+    <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid #F3F4F6', display: 'flex', gap: 12, alignItems: 'center' }}>
+      <button onClick={onClick} disabled={saving}
+        style={{ padding: '10px 24px', background: primary, color: '#fff', border: 'none',
+          borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>
+        {saving ? 'Saving…' : label}
+      </button>
+      {saved && <span style={{ fontSize: 13, color: '#059669', fontWeight: 500 }}>{saved}</span>}
+      {error && <span style={{ fontSize: 13, color: '#DC2626' }}>{error}</span>}
+    </div>
+  );
+}
+
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'branding', label: 'Branding', icon: '🎨' },
   { id: 'loan_products', label: 'Loan Products', icon: '💳' },
@@ -49,49 +101,7 @@ export default function AdminSettingsPage() {
     finally { setSaving(false); }
   };
 
-  const Field = ({ label, type = 'text', value, onChange, hint }: any) => (
-    <div style={{ marginBottom: 18 }}>
-      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>{label}</label>
-      {hint && <p style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 6 }}>{hint}</p>}
-      <input type={type} value={value ?? ''} onChange={e => onChange(e.target.value)}
-        style={{ width: '100%', padding: '10px 12px', border: '1px solid #E5E7EB', borderRadius: 6,
-          fontSize: 14, color: '#111827', outline: 'none' }} />
-    </div>
-  );
 
-  const Toggle = ({ label, value, onChange, hint }: any) => (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '14px 0', borderBottom: '1px solid #F3F4F6' }}>
-      <div>
-        <p style={{ fontSize: 14, fontWeight: 500, color: '#111827' }}>{label}</p>
-        {hint && <p style={{ fontSize: 12, color: '#9CA3AF', marginTop: 2 }}>{hint}</p>}
-      </div>
-      <button onClick={() => onChange(!value)} style={{
-        width: 44, height: 24, borderRadius: 12, border: 'none',
-        background: value ? primary : '#D1D5DB', cursor: 'pointer',
-        position: 'relative', transition: 'background 0.2s',
-      }}>
-        <span style={{
-          position: 'absolute', top: 3,
-          left: value ? 22 : 3,
-          width: 18, height: 18, borderRadius: '50%', background: '#fff',
-          transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-        }} />
-      </button>
-    </div>
-  );
-
-  const SaveButton = ({ onClick, label = 'Save Changes' }: any) => (
-    <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid #F3F4F6', display: 'flex', gap: 12, alignItems: 'center' }}>
-      <button onClick={onClick} disabled={saving}
-        style={{ padding: '10px 24px', background: primary, color: '#fff', border: 'none',
-          borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>
-        {saving ? 'Saving…' : label}
-      </button>
-      {saved && <span style={{ fontSize: 13, color: '#059669', fontWeight: 500 }}>{saved}</span>}
-      {error && <span style={{ fontSize: 13, color: '#DC2626' }}>{error}</span>}
-    </div>
-  );
 
   return (
     <div style={{ maxWidth: 860 }}>
@@ -157,7 +167,7 @@ export default function AdminSettingsPage() {
                 onChange={(v: string) => setCfg(p => ({ ...p, support_phone: v }))} />
               <h3 style={{ fontSize: 14, fontWeight: 700, color: '#374151', margin: '20px 0 12px' }}>Announcement Banner</h3>
               <Toggle label="Show Announcement Banner" value={cfg.announcement_active}
-                onChange={(v: boolean) => setCfg(p => ({ ...p, announcement_active: v }))} />
+                onChange={(v: boolean) => setCfg(p => ({ ...p, announcement_active: v }))} primary={primary} />
               <Field label="Announcement Text" value={cfg.announcement_text}
                 onChange={(v: string) => setCfg(p => ({ ...p, announcement_text: v }))} />
               <SaveButton onClick={() => save({
@@ -166,7 +176,7 @@ export default function AdminSettingsPage() {
                 rbi_registration: cfg.rbi_registration, support_email: cfg.support_email,
                 support_phone: cfg.support_phone, announcement_active: cfg.announcement_active,
                 announcement_text: cfg.announcement_text,
-              })} />
+              })} primary={primary} saving={saving} saved={saved} error={error} />
             </div>
           )}
 
@@ -186,18 +196,18 @@ export default function AdminSettingsPage() {
               </div>
               <Toggle label="Enable Collateral Loans" value={cfg.feature_collateral_loans}
                 onChange={(v: boolean) => setCfg(p => ({ ...p, feature_collateral_loans: v }))}
-                hint="Allows borrowers to apply with collateral (gold, property, vehicle)." />
+                hint="Allows borrowers to apply with collateral (gold, property, vehicle)." primary={primary} />
               <Toggle label="Enable Loan Comparison Tool" value={cfg.feature_loan_comparison}
-                onChange={(v: boolean) => setCfg(p => ({ ...p, feature_loan_comparison: v }))} />
+                onChange={(v: boolean) => setCfg(p => ({ ...p, feature_loan_comparison: v }))} primary={primary} />
               <Toggle label="Enable EMI Pause" value={cfg.feature_emi_pause}
-                onChange={(v: boolean) => setCfg(p => ({ ...p, feature_emi_pause: v }))} />
+                onChange={(v: boolean) => setCfg(p => ({ ...p, feature_emi_pause: v }))} primary={primary} />
               <SaveButton onClick={() => save({
                 min_loan_amount: cfg.min_loan_amount, max_loan_amount: cfg.max_loan_amount,
                 min_tenure_months: cfg.min_tenure_months, max_tenure_months: cfg.max_tenure_months,
                 feature_collateral_loans: cfg.feature_collateral_loans,
                 feature_loan_comparison: cfg.feature_loan_comparison,
                 feature_emi_pause: cfg.feature_emi_pause,
-              })} />
+              })} primary={primary} saving={saving} saved={saved} error={error} />
             </div>
           )}
 
@@ -207,7 +217,7 @@ export default function AdminSettingsPage() {
               <h2 style={{ fontSize: 16, fontWeight: 700, color: '#111827', marginBottom: 20 }}>Pre-Closure Policy</h2>
               <Toggle label="Enable Pre-Closure" value={cfg.feature_preclosure}
                 onChange={(v: boolean) => setCfg(p => ({ ...p, feature_preclosure: v }))}
-                hint="Allow borrowers to close loans early." />
+                hint="Allow borrowers to close loans early." primary={primary} />
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 16 }}>
                 <Field label="Standard Pre-Closure Rate (%)" type="number" value={cfg.default_preclosure_rate}
                   onChange={(v: string) => setCfg(p => ({ ...p, default_preclosure_rate: Number(v) }))} />
@@ -225,7 +235,7 @@ export default function AdminSettingsPage() {
                 preclosure_free_months: cfg.preclosure_free_months,
                 preclosure_early_charge_rate: cfg.preclosure_early_charge_rate,
                 preclosure_link_validity_hours: cfg.preclosure_link_validity_hours,
-              })} />
+              })} primary={primary} saving={saving} saved={saved} error={error} />
             </div>
           )}
 
@@ -239,13 +249,13 @@ export default function AdminSettingsPage() {
                 onChange={(v: string) => setCfg(p => ({ ...p, email_from_address: v }))} />
               <Toggle label="Auto Monthly Statement Email" value={cfg.auto_monthly_statement}
                 onChange={(v: boolean) => setCfg(p => ({ ...p, auto_monthly_statement: v }))}
-                hint="Automatically email EMI statements to borrowers on the 1st of each month." />
+                hint="Automatically email EMI statements to borrowers on the 1st of each month." primary={primary} />
               <Toggle label="Support Chat Widget" value={cfg.feature_support_chat}
-                onChange={(v: boolean) => setCfg(p => ({ ...p, feature_support_chat: v }))} />
+                onChange={(v: boolean) => setCfg(p => ({ ...p, feature_support_chat: v }))} primary={primary} />
               <SaveButton onClick={() => save({
                 email_from_name: cfg.email_from_name, email_from_address: cfg.email_from_address,
                 auto_monthly_statement: cfg.auto_monthly_statement, feature_support_chat: cfg.feature_support_chat,
-              })} />
+              })} primary={primary} saving={saving} saved={saved} error={error} />
             </div>
           )}
 

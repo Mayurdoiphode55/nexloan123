@@ -21,6 +21,10 @@ export default function UserManagementPage() {
   const [creating, setCreating] = useState(false);
   const currentRole = getUserRole();
 
+  const [historyModalUser, setHistoryModalUser] = useState<UserListItem | null>(null);
+  const [historyData, setHistoryData] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   // Form state
   const [officerName, setOfficerName] = useState("");
   const [officerEmail, setOfficerEmail] = useState("");
@@ -50,6 +54,25 @@ export default function UserManagementPage() {
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
+
+  const handleViewHistory = async (user: UserListItem) => {
+    setHistoryModalUser(user);
+    setHistoryLoading(true);
+    try {
+      const token = localStorage.getItem('nexloan_token');
+      const base = process.env.NEXT_PUBLIC_API_URL || '';
+      const res = await fetch(`${base}/api/users/${user.id}/history`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setHistoryData(data);
+    } catch {
+      showToast("Failed to load history", "error");
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
 
   const handleCreateOfficer = async () => {
     if (!officerName.trim() || !officerEmail.trim() || !officerMobile.trim()) {
@@ -184,6 +207,7 @@ export default function UserManagementPage() {
                   <th>Name</th>
                   <th>Email</th>
                   <th>Role</th>
+                  <th>Department</th>
                   <th>Status</th>
                   <th>Joined</th>
                   <th>Actions</th>
@@ -200,6 +224,35 @@ export default function UserManagementPage() {
                       </Badge>
                     </td>
                     <td>
+                      <select
+                        className="user-mgmt__role-select"
+                        value={user.department || ''}
+                        onChange={async (e) => {
+                          const dept = e.target.value;
+                          if (!dept) return; // skip API call when "— None —" is selected
+                          try {
+                            const token = localStorage.getItem('nexloan_token');
+                            const res = await fetch(`/api/users/${user.id}/department`, {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                              body: JSON.stringify({ department: dept }),
+                            });
+                            if (!res.ok) throw new Error();
+                            showToast(`Department updated to ${dept}`, 'success');
+                            fetchUsers();
+                          } catch { showToast('Failed to update department', 'error'); }
+                        }}
+                      >
+                        <option value="">— None —</option>
+                        <option value="Credit">Credit</option>
+                        <option value="Operations">Operations</option>
+                        <option value="Customer Service">Customer Service</option>
+                        <option value="Risk">Risk</option>
+                        <option value="Collections">Collections</option>
+                        <option value="Tech">Tech</option>
+                      </select>
+                    </td>
+                    <td>
                       <span className={`user-mgmt__status ${user.is_active ? "user-mgmt__status--active" : "user-mgmt__status--inactive"}`}>
                         {user.is_active ? "Active" : "Inactive"}
                       </span>
@@ -210,6 +263,13 @@ export default function UserManagementPage() {
                       })}
                     </td>
                     <td className="user-mgmt__actions">
+                      <button
+                        className="user-mgmt__action-btn"
+                        onClick={() => handleViewHistory(user)}
+                        title="View History"
+                      >
+                        🕒
+                      </button>
                       <button
                         className="user-mgmt__action-btn"
                         onClick={() => handleToggleStatus(user.id, user.is_active)}
@@ -299,6 +359,46 @@ export default function UserManagementPage() {
               <Button onClick={handleCreateOfficer} loading={creating}>
                 Create & Send OTP
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View History Modal */}
+      {historyModalUser && (
+        <div className="um-modal-overlay">
+          <div className="um-modal animate-card-entrance" style={{ maxWidth: '600px' }}>
+            <div className="um-modal__header">
+              <h2 className="um-modal__title">Transfer History for {historyModalUser.full_name}</h2>
+              <button onClick={() => setHistoryModalUser(null)} className="um-modal__close">×</button>
+            </div>
+            <div className="um-modal__body">
+              {historyLoading ? (
+                <div className="user-mgmt__loading" style={{ height: 100 }} />
+              ) : historyData.length === 0 ? (
+                <p className="user-mgmt__empty">No department or role transfers found.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  {historyData.map((h, i) => (
+                    <Card key={i} variant="elevated">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600 }}>{h.change_type.replace(/_/g, ' ')}</span>
+                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+                          {new Date(h.created_at).toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+                        <span style={{ textDecoration: 'line-through', marginRight: 8, opacity: 0.6 }}>{h.old_value || 'None'}</span>
+                        <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>→ {h.new_value}</span>
+                      </div>
+                      <div style={{ marginTop: 8, fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+                        Changed by: {h.changed_by_name}
+                        {h.reason && <div style={{ marginTop: 4, fontStyle: 'italic' }}>Reason: "{h.reason}"</div>}
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

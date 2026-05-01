@@ -129,6 +129,8 @@ class Loan(Base):
     collateral_value = Column(Float, nullable=True)
     collateral_description = Column(Text, nullable=True)
     lien_document_url = Column(String(500), nullable=True)
+    collateral_verified = Column(Boolean, default=False, nullable=True)
+    collateral_verified_by = Column(UUID(as_uuid=True), nullable=True)  # no FK to avoid mapper conflict
 
     # Underwriting results
     credit_score = Column(Integer, nullable=True)

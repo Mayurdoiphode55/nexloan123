@@ -216,6 +216,11 @@ async def get_loan_full(
             "ai_recommendation": loan.ai_recommendation,
             "officer_decision": loan.officer_decision,
             "officer_override_reason": loan.officer_override_reason,
+            "loan_type": loan.loan_type,
+            "collateral_type": loan.collateral_type,
+            "collateral_value": loan.collateral_value,
+            "collateral_description": loan.collateral_description,
+            "collateral_verified": getattr(loan, 'collateral_verified', False),
             "created_at": loan.created_at.isoformat(),
         },
         "borrower": {

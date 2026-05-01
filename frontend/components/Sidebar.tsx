@@ -41,6 +41,7 @@ const NAV_ADMIN = [
   { href: '/admin', label: 'Admin Panel', icon: Settings },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
   { href: '/admin/users', label: 'User Management', icon: Users },
+  { href: '/admin/media', label: 'Media Library', icon: Download },
   { href: '/enquiries', label: 'Enquiries', icon: FileText },
   { href: '/delegations', label: 'Delegations', icon: Users },
 ];
