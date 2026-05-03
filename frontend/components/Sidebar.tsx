@@ -5,7 +5,9 @@ import { useTenant } from '@/lib/tenant';
 import {
   LayoutDashboard, FileText, MapPin, Download, Scale,
   Headset, LogOut, ChevronLeft, ChevronRight, Users,
-  Settings, BarChart3, BookOpen, Bell
+  Settings, BarChart3, BookOpen, Bell, Shield, AlertTriangle,
+  PieChart, TrendingUp, Briefcase, Upload, Code, FlaskConical,
+  Siren, FileBarChart, Ban, Banknote
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -17,47 +19,71 @@ interface SidebarProps {
   userRole?: string;
   userName?: string;
   userDept?: string;
+  userPermissions?: string[];
 }
 
 const NAV_BORROWER = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/apply', label: 'Apply', icon: FileText },
   { href: '/track', label: 'Track Application', icon: MapPin },
+  { href: '/topup', label: 'Loan Top-Up', icon: TrendingUp },
+  { href: '/offers', label: 'My Offers', icon: Banknote },
+  { href: '/referrals', label: 'Refer & Earn', icon: Users },
   { href: '/compare', label: 'Loan Comparison', icon: BookOpen },
   { href: '/enquiry', label: 'Service Enquiry', icon: Bell },
   { href: '/support', label: 'Support', icon: Headset },
 ];
 
-const NAV_OFFICER = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/officer', label: 'Work Queue', icon: BarChart3 },
-  { href: '/enquiries', label: 'Enquiries', icon: FileText },
-  { href: '/delegations', label: 'Delegations', icon: Users },
+const NAV_EMPLOYEE = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'VIEW_DASHBOARD_OPS' },
+  { href: '/officer', label: 'Work Queue', icon: BarChart3, permission: 'VIEW_ALL_LOANS' },
+  { href: '/admin', label: 'Admin Panel', icon: Settings, permission: 'VIEW_ADMIN_METRICS' },
+  { href: '/admin/settings', label: 'Settings', icon: Settings, permission: 'CHANGE_SETTINGS' },
+  { href: '/admin/users', label: 'User Management', icon: Users, permission: 'USER_MANAGE' },
+  { href: '/admin/media', label: 'Media Library', icon: Download, permission: 'MANAGE_ANNOUNCEMENTS' },
+  { href: '/enquiries', label: 'Enquiries', icon: FileText, permission: 'VIEW_ENQUIRIES' },
+  { href: '/delegations', label: 'Delegations', icon: Users, permission: 'DELEGATE_ADMIN' },
+  // Phase 5 — Revenue & Business
+  { href: '/admin/rate-rules', label: 'Rate Rules', icon: Banknote, permission: 'CHANGE_SETTINGS' },
+  // Phase 5 — Risk & Compliance
+  { href: '/admin/fraud-flags', label: 'Fraud Detection', icon: AlertTriangle, permission: 'CHANGE_SETTINGS' },
+  { href: '/admin/blacklist', label: 'Blacklist', icon: Ban, permission: 'CHANGE_SETTINGS' },
+  { href: '/admin/collections', label: 'Collections', icon: Shield, permission: 'CHANGE_SETTINGS' },
+  { href: '/admin/portfolio', label: 'Portfolio Risk', icon: PieChart, permission: 'VIEW_ADMIN_METRICS' },
+  // Phase 5 — Operations
+  { href: '/admin/agents', label: 'Agent Management', icon: Briefcase, permission: 'USER_MANAGE' },
+  { href: '/admin/bulk-upload', label: 'Bulk Upload', icon: Upload, permission: 'USER_MANAGE' },
+  { href: '/admin/api-clients', label: 'API Clients', icon: Code, permission: 'CHANGE_SETTINGS' },
+  // Phase 5 — Analytics & Intelligence
+  { href: '/admin/analytics', label: 'Cohort Analytics', icon: TrendingUp, permission: 'VIEW_ADMIN_METRICS' },
+  { href: '/admin/experiments', label: 'A/B Testing', icon: FlaskConical, permission: 'CHANGE_SETTINGS' },
+  { href: '/admin/early-warning', label: 'Early Warning', icon: Siren, permission: 'VIEW_ADMIN_METRICS' },
+  { href: '/admin/reports', label: 'Reports', icon: FileBarChart, permission: 'VIEW_ADMIN_METRICS' },
 ];
 
-const NAV_ADMIN = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/officer', label: 'Work Queue', icon: BarChart3 },
-  { href: '/admin', label: 'Admin Panel', icon: Settings },
-  { href: '/admin/settings', label: 'Settings', icon: Settings },
-  { href: '/admin/users', label: 'User Management', icon: Users },
-  { href: '/admin/media', label: 'Media Library', icon: Download },
-  { href: '/enquiries', label: 'Enquiries', icon: FileText },
-  { href: '/delegations', label: 'Delegations', icon: Users },
+const NAV_AGENT = [
+  { href: '/agent', label: 'Agent Portal', icon: Briefcase },
+  { href: '/apply', label: 'New Application', icon: FileText },
+  { href: '/support', label: 'Support', icon: Headset },
 ];
 
 export default function Sidebar({
   isOpen, onClose, collapsed, onToggleCollapse,
-  pendingCount = 0, userRole = 'BORROWER', userName = '', userDept = '',
+  pendingCount = 0, userRole = 'BORROWER', userName = '', userDept = '', userPermissions = [],
 }: SidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const tenant = useTenant();
 
-  const navItems =
-    ['ADMIN', 'SUPER_ADMIN'].includes(userRole) ? NAV_ADMIN
-    : ['LOAN_OFFICER', 'VERIFIER', 'UNDERWRITER'].includes(userRole) ? NAV_OFFICER
+  let navItems =
+    ['ADMIN', 'SUPER_ADMIN', 'LOAN_OFFICER', 'VERIFIER', 'UNDERWRITER'].includes(userRole) ? NAV_EMPLOYEE
+    : userRole === 'AGENT' ? NAV_AGENT
     : NAV_BORROWER;
+
+  // Hide nav items if the user lacks the required permission (SUPER_ADMIN always sees everything)
+  if (['ADMIN', 'LOAN_OFFICER', 'VERIFIER', 'UNDERWRITER'].includes(userRole)) {
+    navItems = navItems.filter((item: any) => !item.permission || userPermissions.includes(item.permission));
+  }
 
   const handleLogout = () => {
     localStorage.removeItem('nexloan_token');

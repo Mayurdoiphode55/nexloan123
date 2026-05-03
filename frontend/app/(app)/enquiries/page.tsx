@@ -8,9 +8,9 @@ import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 
 interface Enquiry {
-  id: string; full_name: string; mobile: string; email?: string;
-  loan_type?: string; approx_amount?: number; message?: string;
-  status: string; claimed_by_name?: string; created_at: string;
+  id: string; name: string; mobile: string; email?: string;
+  loan_type_interest?: string; loan_amount_range?: string; message?: string;
+  status: string; assigned_to_name?: string; created_at: string;
 }
 
 export default function EnquiriesPage() {
@@ -21,7 +21,7 @@ export default function EnquiriesPage() {
   const [processing, setProcessing] = useState<string | null>(null);
 
   const fetchData = () => {
-    enquiryAPI.getQueue(filter || undefined)
+    enquiryAPI.list({ status: filter || undefined })
       .then(r => setEnquiries(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -31,14 +31,18 @@ export default function EnquiriesPage() {
 
   const handleClaim = async (id: string) => {
     setProcessing(id);
-    try { await enquiryAPI.claim(id); showToast("Enquiry claimed!", "success"); fetchData(); }
+    try { await enquiryAPI.updateStatus(id, "CLAIMED"); showToast("Enquiry claimed!", "success"); fetchData(); }
     catch { showToast("Failed to claim", "error"); }
     finally { setProcessing(null); }
   };
 
   const handleConvert = async (id: string) => {
     setProcessing(id);
-    try { const r = await enquiryAPI.convert(id); showToast(`Converted to ${r.data.loan_number}`, "success"); fetchData(); }
+    try { 
+      const r = await enquiryAPI.convert(id); 
+      showToast(`Converted to ${r.data.loan_number}`, "success"); 
+      fetchData(); 
+    }
     catch { showToast("Failed to convert", "error"); }
     finally { setProcessing(null); }
   };
@@ -79,21 +83,21 @@ export default function EnquiriesPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                    <span style={{ fontWeight: 700, fontSize: 'var(--text-md)' }}>{e.full_name}</span>
+                    <span style={{ fontWeight: 700, fontSize: 'var(--text-md)' }}>{e.name}</span>
                     <Badge variant={statusVariant(e.status)}>{e.status}</Badge>
                   </div>
                   <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
                     <span>📱 {e.mobile}</span>
                     {e.email && <span>✉️ {e.email}</span>}
-                    {e.loan_type && <span>📋 {e.loan_type}</span>}
-                    {e.approx_amount && <span>💰 ₹{e.approx_amount.toLocaleString('en-IN')}</span>}
+                    {e.loan_type_interest && <span>📋 {e.loan_type_interest}</span>}
+                    {e.loan_amount_range && <span>💰 {e.loan_amount_range}</span>}
                   </div>
                   {e.message && <p style={{ marginTop: 8, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{e.message}</p>}
-                  {e.claimed_by_name && <p style={{ marginTop: 4, fontSize: 11, color: 'var(--text-tertiary)' }}>Claimed by: {e.claimed_by_name}</p>}
+                  {e.assigned_to_name && <p style={{ marginTop: 4, fontSize: 11, color: 'var(--text-tertiary)' }}>Claimed by: {e.assigned_to_name}</p>}
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                   {e.status === "NEW" && <Button size="sm" onClick={() => handleClaim(e.id)} loading={processing === e.id}>Claim</Button>}
-                  {(e.status === "CLAIMED" || e.status === "RESPONDED") && <Button size="sm" onClick={() => handleConvert(e.id)} loading={processing === e.id}>Convert to Loan</Button>}
+                  {e.status === "CLAIMED" && <Button size="sm" onClick={() => handleConvert(e.id)} loading={processing === e.id}>Convert</Button>}
                 </div>
               </div>
               <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-tertiary)' }}>

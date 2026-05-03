@@ -63,6 +63,12 @@ class Settings(BaseSettings):
     # White Label
     TENANT_ID: str = "nexloan-default"
 
+    # Bureau Integration
+    BUREAU_MODE: str = "simulated"
+
+    # Frontend URL (for deep links)
+    FRONTEND_URL: str = "http://localhost:3000"
+
     class Config:
         env_file = ".env"
         case_sensitive = True

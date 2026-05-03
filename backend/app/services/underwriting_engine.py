@@ -12,8 +12,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import BackgroundTasks
 
-from app.models.loan import Loan, LoanStatus, AuditLog, User
-from app.services.credit_score import calculate_credit_score
+from app.models.loan import Loan, LoanStatus, AuditLog, User, KYCDocument
+from app.services.credit_score import calculate_credit_score, apply_rate_rules
+from app.services.bureau_service import bureau_service
 from app.services.email_service import (
     send_approval_email,
     send_rejection_email,
@@ -191,6 +192,40 @@ async def evaluate_loan(
     credit_score = score_result["score"]
     interest_rate = score_result["interest_rate"]
     dti = score_result["dti"]
+
+    # ── 1b. Bureau Score (if available) ──
+    try:
+        kyc_result = await db.execute(
+            select(KYCDocument).where(KYCDocument.loan_id == loan.id)
+        )
+        kyc_doc = kyc_result.scalars().first()
+        pan_number = kyc_doc.pan_number if kyc_doc else None
+
+        if pan_number:
+            bureau_result = await bureau_service.fetch_score(
+                pan_number=pan_number,
+                dob=str(loan.date_of_birth) if loan.date_of_birth else "",
+                name=user.full_name,
+                loan_id=str(loan.id),
+                user_id=str(user.id),
+                db=db,
+            )
+            bureau_score_val = bureau_result.get("score")
+            if bureau_score_val:
+                blended = bureau_service.blend_scores(credit_score, bureau_score_val)
+                logger.info(f"📊 Bureau blended score: {credit_score} + {bureau_score_val} → {blended}")
+                score_result["score"] = blended
+                score_result["bureau_score"] = bureau_score_val
+                credit_score = blended
+    except Exception as e:
+        logger.warning(f"Bureau score fetch skipped: {e}")
+
+    # ── 1c. Apply dynamic rate rules ──
+    try:
+        score_result = await apply_rate_rules(db, score_result, loan)
+        interest_rate = score_result["interest_rate"]
+    except Exception as e:
+        logger.warning(f"Rate rules skipped: {e}")
 
     # ── 2. Compute EMI at scored rate ──
     requested_emi = calculate_emi(P, interest_rate, n)

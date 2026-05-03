@@ -244,6 +244,8 @@ export default function UserManagementPage() {
                         }}
                       >
                         <option value="">— None —</option>
+                        <option value="Admin">Admin</option>
+                        <option value="Administration">Administration</option>
                         <option value="Credit">Credit</option>
                         <option value="Operations">Operations</option>
                         <option value="Customer Service">Customer Service</option>

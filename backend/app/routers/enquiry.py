@@ -171,11 +171,12 @@ async def convert_enquiry(
     enquiry_id: str,
     current_user=Depends(require_permission(Permission.ENQUIRY_MANAGE)),
 ):
-    """Convert a LoanEnquiry into a formal loan application."""
+    """Convert a ServiceEnquiry into a formal loan application."""
     async with AsyncSessionLocal() as db:
         enquiry = (await db.execute(
-            select(LoanEnquiry).where(LoanEnquiry.id == enquiry_id)
+            select(ServiceEnquiry).where(ServiceEnquiry.id == enquiry_id)
         )).scalar_one_or_none()
+        
         if not enquiry:
             raise HTTPException(status_code=404, detail="Enquiry not found")
         if enquiry.status == "CONVERTED":
@@ -191,7 +192,7 @@ async def convert_enquiry(
             import uuid as _uuid
             user = User(
                 id=_uuid.uuid4(),
-                full_name=enquiry.full_name,
+                full_name=enquiry.name,
                 email=enquiry.email or f"{enquiry.mobile}@placeholder.nexloan.in",
                 mobile=enquiry.mobile,
                 is_verified=False,
@@ -207,17 +208,31 @@ async def convert_enquiry(
         count = (await db.execute(select(sqlfunc.count(Loan.id)))).scalar() or 0
         loan_number = f"NL-{year}-{str(count + 1).zfill(5)}"
 
+        # Try to parse loan_amount_range to an approx number
+        approx_amount = 0
+        if enquiry.loan_amount_range:
+            # Extract the first number found in the string (e.g. "5L - 10L" -> 500000)
+            import re
+            numbers = re.findall(r'\d+', enquiry.loan_amount_range)
+            if numbers:
+                val = int(numbers[0])
+                # If it's a small number like '5', it's probably '5L'
+                if val < 100:
+                    val = val * 100000
+                approx_amount = val
+
         loan = Loan(
             id=_uuid.uuid4(),
             user_id=user.id,
             loan_number=loan_number,
             status=LoanStatus.INQUIRY,
-            loan_amount=enquiry.approx_amount,
+            loan_amount=approx_amount if approx_amount > 0 else None,
             loan_type="NON_COLLATERAL",
         )
         db.add(loan)
         enquiry.status = "CONVERTED"
-        enquiry.converted_loan_id = loan.id
+        # ServiceEnquiry doesn't have converted_loan_id field in model yet, so we just update status
+        
         await db.commit()
 
         return {

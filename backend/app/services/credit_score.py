@@ -145,3 +145,80 @@ def calculate_credit_score(
         "dti": round(dti, 4),
         "breakdown": breakdown,
     }
+
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.models.loan import RateRule, Loan
+from datetime import datetime
+
+async def apply_rate_rules(
+    db: AsyncSession,
+    score_result: dict,
+    loan: Loan
+) -> dict:
+    """
+    Applies dynamic rate rules (overrides or adjustments) based on loan properties.
+    Rules are evaluated in order of priority (highest first).
+    """
+    if not score_result.get("is_eligible"):
+        return score_result
+
+    now = datetime.utcnow()
+    
+    # Fetch active rules, ordered by priority DESC
+    stmt = select(RateRule).where(
+        RateRule.is_active == True,
+    ).order_by(RateRule.priority.desc())
+    
+    result = await db.execute(stmt)
+    rules = result.scalars().all()
+    
+    base_rate = score_result["interest_rate"]
+    final_rate = base_rate
+    applied_rules = []
+    
+    for rule in rules:
+        # Check conditions
+        match = True
+        
+        if rule.condition_loan_purpose and rule.condition_loan_purpose.lower() != str(loan.purpose).lower():
+            match = False
+        
+        if match and rule.condition_score_min is not None and score_result["score"] < rule.condition_score_min:
+            match = False
+            
+        if match and rule.condition_score_max is not None and score_result["score"] > rule.condition_score_max:
+            match = False
+            
+        if match and rule.condition_amount_min is not None and loan.loan_amount < rule.condition_amount_min:
+            match = False
+            
+        if match and rule.condition_amount_max is not None and loan.loan_amount > rule.condition_amount_max:
+            match = False
+            
+        if match and rule.condition_valid_from and now < rule.condition_valid_from:
+            match = False
+            
+        if match and rule.condition_valid_until and now > rule.condition_valid_until:
+            match = False
+            
+        if match:
+            # Apply rule
+            applied_rules.append(rule.name)
+            if rule.rate_override is not None:
+                final_rate = rule.rate_override
+                # If it's an override, we typically stop processing further adjustments (highest priority wins)
+                break
+            elif rule.rate_adjustment is not None:
+                final_rate += rule.rate_adjustment
+                
+    if applied_rules:
+        # Ensure we don't drop below 0 or go insanely high
+        final_rate = max(1.0, min(final_rate, 36.0))
+        score_result["interest_rate"] = round(final_rate, 2)
+        score_result["applied_rate_rules"] = applied_rules
+        logger.info(f"📈 Applied rate rules {applied_rules} to loan {loan.loan_number}. New rate: {score_result['interest_rate']}%")
+        
+    return score_result
+

@@ -56,9 +56,30 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(generate_monthly_statements, 'cron', day=1, hour=6, minute=0, id='monthly_statements')
         scheduler.add_job(generate_annual_statements, 'cron', month=4, day=1, hour=6, minute=0, id='annual_statements')
 
+        # Phase 5: Collections engine — daily 6 AM
+        from app.services.collections_engine import run_collections_engine
+        scheduler.add_job(run_collections_engine, 'cron', hour=6, minute=0, id='collections_engine')
+
+        # Phase 5: Early warning system — weekly Monday 7 AM
+        from app.services.early_warning import run_early_warning_system
+        scheduler.add_job(run_early_warning_system, 'cron', day_of_week='mon', hour=7, minute=0, id='early_warning')
+
+        # Phase 5: Offer expiry — daily midnight
+        async def expire_offers_job():
+            from app.utils.database import AsyncSessionLocal
+            from app.services.offer_engine import expire_old_offers
+            async with AsyncSessionLocal() as db:
+                await expire_old_offers(db)
+        scheduler.add_job(expire_offers_job, 'cron', hour=0, minute=5, id='offer_expiry')
+
+        # Phase 5: Benchmark report — 1st of every month at 8 AM
+        from app.services.benchmark_service import send_monthly_benchmark_report
+        scheduler.add_job(send_monthly_benchmark_report, 'cron', day=1, hour=8, minute=0, id='benchmark_report')
+
         scheduler.start()
         logger.info("✅ EMI reminder scheduler started (daily at 9:00 AM IST)")
         logger.info("✅ Statement automation scheduled (monthly 1st 6AM, annual April 1st 6AM)")
+        logger.info("✅ Phase 5 jobs: collections (6AM daily), early-warning (Mon 7AM), offers (midnight), benchmark (1st 8AM)")
     except ImportError:
         logger.warning("⚠️  APScheduler not installed — EMI reminders disabled. Install with: pip install apscheduler")
     except Exception as e:
@@ -195,4 +216,17 @@ app.include_router(user_management.router, prefix="/api/employees", tags=["Emplo
 from app.routers import config_router, statements
 app.include_router(config_router.router, prefix="/api/config", tags=["Config"])
 app.include_router(statements.router, prefix="/api/statements", tags=["Statements"])
+
+# Phase 5 (prompt5.md) — Revenue, Risk, Operations & Analytics
+from app.routers import offers, topup, collections, portfolio, agent, bulk_upload, embed, analytics, experiments, risk
+app.include_router(offers.router, prefix="/api/offers", tags=["Offers"])
+app.include_router(topup.router, prefix="/api/topup", tags=["Top-Up"])
+app.include_router(collections.router, prefix="/api/collections", tags=["Collections"])
+app.include_router(portfolio.router, prefix="/api/portfolio", tags=["Portfolio"])
+app.include_router(agent.router, prefix="/api/agent", tags=["Agent"])
+app.include_router(bulk_upload.router, prefix="/api/bulk", tags=["Bulk Upload"])
+app.include_router(embed.router, prefix="/api/embed", tags=["Embedded Lending"])
+app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
+app.include_router(experiments.router, prefix="/api/experiments", tags=["Experiments"])
+app.include_router(risk.router, prefix="/api/risk", tags=["Risk"])
 

@@ -76,7 +76,8 @@ async def list_users(
     stmt = select(User).order_by(User.created_at.desc())
 
     if role:
-        stmt = stmt.where(User.role == role)
+        roles_list = [r.strip() for r in role.split(',')]
+        stmt = stmt.where(User.role.in_(roles_list))
 
     if search:
         stmt = stmt.where(
@@ -109,13 +110,21 @@ async def list_users(
 async def get_my_profile(
     current_user: User = Depends(get_current_user),
 ):
-    """Returns the authenticated user's profile including role."""
+    """Returns the authenticated user's profile including role and permissions."""
+    from app.utils.permissions import get_user_permissions, check_delegation
+    role = current_user.role or "BORROWER"
+    role_perms = get_user_permissions(role)
+    delegated = await check_delegation(str(current_user.id))
+    all_perms = role_perms | delegated
+    perms_list = [p.value for p in all_perms]
+
     return {
         "id": str(current_user.id),
         "full_name": current_user.full_name,
         "email": current_user.email,
         "mobile": current_user.mobile,
-        "role": current_user.role or "BORROWER",
+        "role": role,
+        "permissions": perms_list,
         "is_active": getattr(current_user, 'is_active', True),
         "is_verified": current_user.is_verified,
         "created_at": current_user.created_at.isoformat(),
@@ -141,24 +150,34 @@ async def create_officer(
     existing = await db.execute(
         select(User).where((User.email == req.email) | (User.mobile == req.mobile))
     )
-    if existing.scalars().first():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User with this email or mobile already exists",
+    existing_user = existing.scalars().first()
+    
+    if existing_user:
+        if existing_user.role == "BORROWER":
+            # Upgrade borrower to loan officer
+            existing_user.role = req.role or UserRole.LOAN_OFFICER.value
+            existing_user.full_name = req.full_name
+            await db.commit()
+            await db.refresh(existing_user)
+            officer = existing_user
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User with this email or mobile already exists as an employee",
+            )
+    else:
+        # Create officer account
+        officer = User(
+            full_name=req.full_name,
+            email=req.email,
+            mobile=req.mobile,
+            is_verified=False,
+            role=req.role or UserRole.LOAN_OFFICER.value,
+            is_active=True,
         )
-
-    # Create officer account
-    officer = User(
-        full_name=req.full_name,
-        email=req.email,
-        mobile=req.mobile,
-        is_verified=False,
-        role=req.role or UserRole.LOAN_OFFICER.value,
-        is_active=True,
-    )
-    db.add(officer)
-    await db.commit()
-    await db.refresh(officer)
+        db.add(officer)
+        await db.commit()
+        await db.refresh(officer)
 
     logger.info(f"✅ Loan Officer created: {officer.email} by {current_user.email}")
 
@@ -328,22 +347,34 @@ async def create_employee(
     existing = await db.execute(
         select(User).where((User.email == req.email) | (User.mobile == req.mobile))
     )
-    if existing.scalars().first():
-        raise HTTPException(status_code=400, detail="User with this email or mobile already exists")
-
-    employee = User(
-        full_name=req.full_name,
-        email=req.email,
-        mobile=req.mobile,
-        is_verified=False,
-        role=req.role,
-        is_active=True,
-        department=req.department,
-        employee_id=req.employee_id,
-    )
-    db.add(employee)
-    await db.commit()
-    await db.refresh(employee)
+    existing_user = existing.scalars().first()
+    
+    if existing_user:
+        if existing_user.role == "BORROWER" or existing_user.role is None:
+            # Upgrade borrower to employee
+            existing_user.role = req.role
+            existing_user.department = req.department
+            existing_user.employee_id = req.employee_id
+            existing_user.full_name = req.full_name
+            await db.commit()
+            await db.refresh(existing_user)
+            employee = existing_user
+        else:
+            raise HTTPException(status_code=400, detail="User with this email or mobile already exists as an employee")
+    else:
+        employee = User(
+            full_name=req.full_name,
+            email=req.email,
+            mobile=req.mobile,
+            is_verified=False,
+            role=req.role,
+            is_active=True,
+            department=req.department,
+            employee_id=req.employee_id,
+        )
+        db.add(employee)
+        await db.commit()
+        await db.refresh(employee)
 
     otp = generate_otp(length=6)
     await store_otp(req.email, otp)

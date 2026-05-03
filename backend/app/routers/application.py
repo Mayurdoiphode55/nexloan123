@@ -19,6 +19,7 @@ from app.utils.auth import get_current_user
 from app.services.storage import upload_document
 from app.ai.kyc_pipeline import run_kyc_pipeline
 from app.services.milestone_service import create_initial_milestones, advance_milestone, update_document_status
+from app.services.fraud_detector import run_fraud_checks, check_blacklist
 
 logger = logging.getLogger("nexloan.application")
 
@@ -282,10 +283,50 @@ async def upload_kyc(
         logger.error(f"❌ Failed to save KYC result: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to save verification result: {str(e)}")
 
+    # ── Phase 5: Blacklist Check ──
+    blacklist_hit = None
+    try:
+        pan_num = pan_result.get("masked_doc_number") or pan_result.get("doc_number")
+        aadhaar_num = aadhaar_result.get("masked_doc_number") or aadhaar_result.get("doc_number")
+        blacklist_hit = await check_blacklist(
+            pan_number=pan_num,
+            aadhaar_number=aadhaar_num,
+            mobile=current_user.mobile,
+            email=current_user.email,
+            db=db,
+        )
+        if blacklist_hit:
+            logger.warning(f"🚫 Blacklist hit for loan {loan.loan_number}: {blacklist_hit.identifier_type} = {blacklist_hit.identifier_value}")
+    except Exception as e:
+        logger.warning(f"Blacklist check skipped: {e}")
+
+    # ── Phase 5: Fraud Detection ──
+    fraud_flags = []
+    try:
+        # Reload KYC document for fraud checks
+        kyc_for_fraud = (await db.execute(
+            select(KYCDocument).where(KYCDocument.loan_id == loan.id)
+        )).scalar_one_or_none()
+        if kyc_for_fraud:
+            fraud_flags = await run_fraud_checks(
+                loan=loan,
+                user=current_user,
+                kyc=kyc_for_fraud,
+                request_ip="",  # IP not available in current context
+                db=db,
+            )
+            if fraud_flags:
+                await db.commit()
+                logger.warning(f"🚩 {len(fraud_flags)} fraud flags raised for {loan.loan_number}")
+    except Exception as e:
+        logger.warning(f"Fraud detection skipped: {e}")
+
     return KYCUploadResponse(
         loan_id=str(loan.id),
-        verdict=final_verdict,
-        remarks=remarks
+        verdict="BLACKLISTED" if blacklist_hit else final_verdict,
+        remarks=f"⛔ Blacklisted: {blacklist_hit.reason}" if blacklist_hit else (
+            f"{remarks} | ⚠️ {len(fraud_flags)} fraud flag(s) raised" if fraud_flags else remarks
+        ),
     )
 
 

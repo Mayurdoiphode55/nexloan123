@@ -15,6 +15,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [userName, setUserName] = useState("User");
   const [userRole, setUserRole] = useState("BORROWER");
   const [userDept, setUserDept] = useState("");
+  const [userPermissions, setUserPermissions] = useState<string[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
@@ -26,6 +27,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       setUserName(parsed.full_name || "User");
       setUserRole(parsed.role || "BORROWER");
       setUserDept(parsed.department || "");
+      setUserPermissions(parsed.permissions || []);
     } catch {}
     // Load saved sidebar collapse state
     const saved = localStorage.getItem("sidebar_collapsed");
@@ -67,6 +69,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         userRole={userRole}
         userName={userName}
         userDept={userDept}
+        userPermissions={userPermissions}
       />
 
       {/* Main content — shifts right by sidebar width */}

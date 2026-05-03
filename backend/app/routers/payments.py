@@ -14,9 +14,10 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.loan import Loan, User, EMISchedule, Payment, AuditLog, PaymentStatus
+from app.models.loan import Loan, User, EMISchedule, Payment, AuditLog, PaymentStatus, LoanStatus
 from app.utils.database import get_db
 from app.utils.auth import get_current_user
+from app.services.offer_engine import evaluate_and_generate_offers
 
 logger = logging.getLogger("nexloan.payments")
 router = APIRouter()
@@ -184,6 +185,27 @@ async def verify_payment(
         db.add(audit)
 
     await db.commit()
+
+    # ── Phase 5: Evaluate and generate cross-sell/upsell offers ──
+    if loan:
+        try:
+            from sqlalchemy.orm import selectinload
+            # Reload loan with EMI schedule for offer evaluation
+            loan_with_emis = (await db.execute(
+                select(Loan).options(selectinload(Loan.emi_schedule)).where(Loan.id == payment.loan_id)
+            )).scalar_one_or_none()
+            if loan_with_emis:
+                offers = await evaluate_and_generate_offers(
+                    user_id=str(current_user.id),
+                    loan=loan_with_emis,
+                    db=db,
+                )
+                if offers:
+                    await db.commit()
+                    logger.info(f"🎁 Generated {len(offers)} offers after EMI payment for {loan.loan_number}")
+        except Exception as e:
+            logger.warning(f"Offer generation skipped after payment: {e}")
+
     return {"status": "success", "message": "EMI payment verified and recorded"}
 
 

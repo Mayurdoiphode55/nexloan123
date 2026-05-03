@@ -11,11 +11,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.loan import User
+from app.models.loan import User, ReferralCode
 from app.services.email_service import send_otp_email
 from app.utils.auth import create_access_token, generate_otp
 from app.utils.database import get_db
 from app.utils.redis_client import store_otp, verify_otp
+import secrets
+import string
 
 logger = logging.getLogger("nexloan.auth")
 
@@ -30,6 +32,7 @@ class RegisterRequest(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=255)
     email: EmailStr
     mobile: str = Field(..., pattern=r"^\d{10}$")  # 10-digit mobile number
+    referral_code: str | None = None  # Optional referral code from referrer
 
 
 class RegisterResponse(BaseModel):
@@ -108,6 +111,35 @@ async def register(
     await db.refresh(user)
 
     logger.info(f"New user registered: {user.email} ({user.id})")
+
+    # ── Phase 5: Generate Referral Code ──
+    try:
+        code_chars = string.ascii_uppercase + string.digits
+        ref_code = 'NL' + ''.join(secrets.choice(code_chars) for _ in range(6))
+        referral_entry = ReferralCode(
+            user_id=user.id,
+            code=ref_code,
+        )
+        db.add(referral_entry)
+        await db.commit()
+        logger.info(f"🎁 Referral code {ref_code} generated for {user.email}")
+    except Exception as e:
+        logger.warning(f"Referral code generation skipped: {e}")
+
+    # ── Phase 5: Track referral if referral_code was provided ──
+    if req.referral_code:
+        try:
+            from app.models.loan import Referral
+            referrer_code = (await db.execute(
+                select(ReferralCode).where(ReferralCode.code == req.referral_code)
+            )).scalar_one_or_none()
+            if referrer_code:
+                referrer_code.total_referrals += 1
+                # We don't reward yet — reward happens when referred user's loan is disbursed
+                await db.commit()
+                logger.info(f"🔗 Referral tracked: {req.referral_code} → {user.email}")
+        except Exception as e:
+            logger.warning(f"Referral tracking skipped: {e}")
 
     # Generate and store OTP
     otp = generate_otp(length=6)
@@ -249,6 +281,13 @@ async def verify_otp_endpoint(req: VerifyOTPRequest, db: AsyncSession = Depends(
 
     logger.info(f"User verified via OTP: {user_email} ({user_id}) role={user_role}")
 
+    # Fetch user permissions
+    from app.utils.permissions import get_user_permissions, check_delegation
+    role_perms = get_user_permissions(user_role)
+    delegated = await check_delegation(user_id)
+    all_perms = role_perms | delegated
+    perms_list = [p.value for p in all_perms]
+
     # Create JWT token
     token = create_access_token(user_id, user_email, user_role)
 
@@ -261,6 +300,7 @@ async def verify_otp_endpoint(req: VerifyOTPRequest, db: AsyncSession = Depends(
             "mobile": row["mobile"],
             "is_verified": True,
             "role": user_role,
+            "permissions": perms_list,
             "created_at": row["created_at"].isoformat() if row["created_at"] else "",
         },
     )

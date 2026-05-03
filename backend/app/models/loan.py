@@ -72,6 +72,7 @@ class UserRole(str, PyEnum):
     UNDERWRITER = "UNDERWRITER"
     ADMIN = "ADMIN"
     SUPER_ADMIN = "SUPER_ADMIN"
+    AGENT = "AGENT"
 
 
 # ─── Models ─────────────────────────────────────────────────────────────────────
@@ -95,6 +96,9 @@ class User(Base):
     branch_location = Column(String(255), nullable=True)  # e.g., Mumbai HQ, Delhi Branch
     employee_id = Column(String(50), nullable=True)       # Internal employee ID
     reporting_manager_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+    # Phase 5 — Referral reward balance
+    reward_balance = Column(Float, default=0.0)
 
     # Relationships
     loans = relationship("Loan", back_populates="user", lazy="noload")
@@ -170,6 +174,17 @@ class Loan(Base):
     ai_recommendation = Column(String(20), nullable=True)   # APPROVE/REJECT — what AI said
     officer_decision = Column(String(20), nullable=True)     # APPROVE/REJECT — what officer decided
 
+    # Phase 5 — Top-up loan fields
+    is_topup = Column(Boolean, default=False)
+    parent_loan_id = Column(UUID(as_uuid=True), ForeignKey("loans.id"), nullable=True)
+    topup_previous_outstanding = Column(Float, nullable=True)
+
+    # Phase 5 — Agent/DSA sourcing
+    sourced_by_agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id", use_alter=True), nullable=True)
+
+    # Phase 5 — Request metadata
+    metadata_ = Column("loan_metadata", JSON, nullable=True)
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -181,6 +196,7 @@ class Loan(Base):
     audit_logs = relationship("AuditLog", back_populates="loan", lazy="selectin", order_by="AuditLog.created_at.desc()")
     officer_assignments = relationship("OfficerAssignment", back_populates="loan", lazy="selectin")
     loan_notes = relationship("LoanNote", back_populates="loan", lazy="selectin", order_by="LoanNote.created_at.desc()")
+    parent_loan = relationship("Loan", remote_side=[id], foreign_keys=[parent_loan_id])
 
 
 class KYCDocument(Base):
@@ -697,6 +713,21 @@ class TenantConfig(Base):
     })
     # Auto statements
     auto_monthly_statement = Column(Boolean, default=False)
+
+    # Phase 5 — Bureau Integration
+    bureau_mode = Column(String(20), default="simulated")
+    bureau_weight = Column(Float, default=0.4)
+    bureau_api_key = Column(String(500), nullable=True)
+    bureau_enabled = Column(Boolean, default=False)
+
+    # Phase 5 — Referral reward config
+    referral_reward_amount = Column(Float, default=500.0)
+
+    # Phase 5 — Benchmark reports
+    benchmark_report_email = Column(String(200), nullable=True)
+    benchmark_report_enabled = Column(Boolean, default=True)
+    benchmark_report_day = Column(Integer, default=1)
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -738,3 +769,280 @@ class ServiceEnquiry(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     officer = relationship("User", foreign_keys=[assigned_to])
+
+
+# ─── Phase 5 Models — Revenue, Risk, Operations & Analytics ────────────────────
+
+
+class RateRule(Base):
+    """Dynamic interest rate rules — evaluated during underwriting."""
+    __tablename__ = "rate_rules"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(200), nullable=False)
+    is_active = Column(Boolean, default=True)
+    priority = Column(Integer, default=0)
+
+    # Conditions (all must match for the rule to apply)
+    condition_loan_purpose = Column(String(100), nullable=True)
+    condition_score_min = Column(Integer, nullable=True)
+    condition_score_max = Column(Integer, nullable=True)
+    condition_amount_min = Column(Float, nullable=True)
+    condition_amount_max = Column(Float, nullable=True)
+    condition_channel = Column(String(50), nullable=True)
+    condition_valid_from = Column(DateTime, nullable=True)
+    condition_valid_until = Column(DateTime, nullable=True)
+
+    # Rate Adjustment
+    rate_override = Column(Float, nullable=True)
+    rate_adjustment = Column(Float, nullable=True)
+
+    # Metadata
+    description = Column(Text, nullable=True)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Offer(Base):
+    """Cross-sell / upsell offers generated for borrowers."""
+    __tablename__ = "offers"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    loan_id = Column(UUID(as_uuid=True), ForeignKey("loans.id"), nullable=True)
+    offer_type = Column(String(50), nullable=False)
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    offered_amount = Column(Float, nullable=True)
+    offered_rate = Column(Float, nullable=True)
+    valid_until = Column(DateTime, nullable=True)
+    status = Column(String(20), default="PENDING")
+    triggered_by = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    responded_at = Column(DateTime, nullable=True)
+
+
+class ReferralCode(Base):
+    """User-specific referral codes for refer & earn."""
+    __tablename__ = "referral_codes"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), unique=True)
+    code = Column(String(20), unique=True, nullable=False)
+    total_referrals = Column(Integer, default=0)
+    successful_referrals = Column(Integer, default=0)
+    total_reward_earned = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class BureauScore(Base):
+    """Credit bureau score records — simulated or real."""
+    __tablename__ = "bureau_scores"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    loan_id = Column(UUID(as_uuid=True), ForeignKey("loans.id"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    bureau_name = Column(String(50), nullable=False)
+    bureau_score = Column(Integer, nullable=False)
+    bureau_report = Column(JSON, nullable=True)
+    fetched_at = Column(DateTime, default=datetime.utcnow)
+    is_simulated = Column(Boolean, default=True)
+
+
+class FraudFlag(Base):
+    """Cross-application fraud pattern detection flags."""
+    __tablename__ = "fraud_flags"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    loan_id = Column(UUID(as_uuid=True), ForeignKey("loans.id"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    flag_type = Column(String(100), nullable=False)
+    severity = Column(String(20), default="MEDIUM")
+    description = Column(Text, nullable=False)
+    related_loan_id = Column(UUID(as_uuid=True), ForeignKey("loans.id"), nullable=True)
+    is_resolved = Column(Boolean, default=False)
+    resolved_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    resolution_note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Blacklist(Base):
+    """Blacklisted identifiers — PAN, Aadhaar, mobile, etc."""
+    __tablename__ = "blacklist"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    identifier_type = Column(String(30), nullable=False)
+    identifier_value = Column(String(200), nullable=False)
+    reason = Column(Text, nullable=False)
+    added_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CollectionsCase(Base):
+    """Collections case for overdue loans."""
+    __tablename__ = "collections_cases"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    loan_id = Column(UUID(as_uuid=True), ForeignKey("loans.id"), unique=True, nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    assigned_officer_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+    days_past_due = Column(Integer, default=0)
+    overdue_amount = Column(Float, default=0.0)
+    overdue_installments = Column(Integer, default=0)
+    dpd_bucket = Column(String(20), default="CURRENT")
+
+    status = Column(String(30), default="OPEN")
+    settlement_offered = Column(Boolean, default=False)
+    settlement_amount = Column(Float, nullable=True)
+    settlement_discount_pct = Column(Float, nullable=True)
+    settlement_valid_until = Column(DateTime, nullable=True)
+    settlement_accepted = Column(Boolean, nullable=True)
+
+    legal_notice_sent = Column(Boolean, default=False)
+    legal_notice_date = Column(DateTime, nullable=True)
+
+    opened_at = Column(DateTime, default=datetime.utcnow)
+    last_contact_at = Column(DateTime, nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True)
+
+
+class CollectionsActivity(Base):
+    """Activity log for collections cases."""
+    __tablename__ = "collections_activity"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    case_id = Column(UUID(as_uuid=True), ForeignKey("collections_cases.id"), nullable=False)
+    activity_type = Column(String(50), nullable=False)
+    description = Column(Text, nullable=True)
+    performed_by = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Agent(Base):
+    """DSA (Direct Selling Agent) records."""
+    __tablename__ = "agents"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), unique=True, nullable=False)
+    agent_code = Column(String(20), unique=True, nullable=False)
+    agency_name = Column(String(200), nullable=True)
+    commission_rate_pct = Column(Float, default=1.0)
+    total_applications = Column(Integer, default=0)
+    total_disbursed = Column(Integer, default=0)
+    total_commission_earned = Column(Float, default=0.0)
+    total_commission_paid = Column(Float, default=0.0)
+    kyc_verified = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
+    registered_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+
+class AgentCommission(Base):
+    """Commission tracking per loan disbursement for agents."""
+    __tablename__ = "agent_commissions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=False)
+    loan_id = Column(UUID(as_uuid=True), ForeignKey("loans.id"), nullable=False)
+    disbursed_amount = Column(Float, nullable=False)
+    commission_rate = Column(Float, nullable=False)
+    commission_amount = Column(Float, nullable=False)
+    status = Column(String(20), default="PENDING")
+    approved_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class BulkUploadJob(Base):
+    """Bulk CSV upload processing jobs."""
+    __tablename__ = "bulk_upload_jobs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    uploaded_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    filename = Column(String(300), nullable=True)
+    total_rows = Column(Integer, default=0)
+    processed_rows = Column(Integer, default=0)
+    eligible_count = Column(Integer, default=0)
+    ineligible_count = Column(Integer, default=0)
+    status = Column(String(30), default="PROCESSING")
+    result_file_url = Column(String(500), nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+
+class APIClient(Base):
+    """Embedded lending API clients."""
+    __tablename__ = "api_clients"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    client_name = Column(String(200), nullable=False)
+    api_key = Column(String(100), unique=True, nullable=False)
+    webhook_url = Column(String(500), nullable=True)
+    allowed_origins = Column(JSON, default=[])
+    is_active = Column(Boolean, default=True)
+    monthly_request_limit = Column(Integer, default=1000)
+    requests_this_month = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CreditPolicyExperiment(Base):
+    """A/B credit policy testing experiments."""
+    __tablename__ = "credit_policy_experiments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String(20), default="ACTIVE")
+    start_date = Column(DateTime, default=datetime.utcnow)
+    end_date = Column(DateTime, nullable=True)
+    traffic_split = Column(Float, default=0.5)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+    # Policy A (Control)
+    policy_a_min_score = Column(Integer, default=600)
+    policy_a_max_dti = Column(Float, default=0.50)
+
+    # Policy B (Challenger)
+    policy_b_min_score = Column(Integer, nullable=True)
+    policy_b_max_dti = Column(Float, nullable=True)
+
+    # Results
+    policy_a_approval_rate = Column(Float, nullable=True)
+    policy_a_npa_rate = Column(Float, nullable=True)
+    policy_b_approval_rate = Column(Float, nullable=True)
+    policy_b_npa_rate = Column(Float, nullable=True)
+    winner = Column(String(10), nullable=True)
+
+
+class ExperimentAssignment(Base):
+    """Loan-to-experiment assignment for A/B testing."""
+    __tablename__ = "experiment_assignments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    experiment_id = Column(UUID(as_uuid=True), ForeignKey("credit_policy_experiments.id"), nullable=False)
+    loan_id = Column(UUID(as_uuid=True), ForeignKey("loans.id"), nullable=False)
+    policy_group = Column(String(1), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class EarlyWarningFlag(Base):
+    """Predictive early warning flags for potential defaults."""
+    __tablename__ = "early_warning_flags"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    loan_id = Column(UUID(as_uuid=True), ForeignKey("loans.id"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    risk_score = Column(Float, nullable=False)
+    risk_label = Column(String(20), nullable=False)
+    prediction_basis = Column(JSON, nullable=True)
+    ai_analysis = Column(Text, nullable=True)
+    action_taken = Column(String(100), nullable=True)
+    is_resolved = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
